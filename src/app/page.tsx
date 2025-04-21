@@ -101,14 +101,21 @@ export default function Home() {
         // 광고 그룹 리포트 데이터 가져오기
         const response = await fetchAdGroupReport(
           dateRange,
-          selectedCampaign || undefined,
-          selectedAdGroup || undefined
+          selectedCampaign || undefined
         );
         
         if (response.error) {
           setError(response.error);
         } else {
-          setAdGroupReportData(response.data || []);
+          let adGroupData = response.data || [];
+          
+          // 선택된 광고 그룹이 있으면 해당 그룹으로 필터링
+          if (selectedAdGroup) {
+            adGroupData = adGroupData.filter(item => item.id === selectedAdGroup);
+            console.log(`선택된 광고 그룹(${selectedAdGroup})으로 필터링: ${adGroupData.length}개 항목`);
+          }
+          
+          setAdGroupReportData(adGroupData);
         }
       }
     } catch (err: any) {
@@ -214,6 +221,7 @@ export default function Home() {
       
       return filtered;
     } else {
+      // 광고 그룹 탭에서는 이미 필터링된 데이터 사용
       return adGroupReportData;
     }
   };
@@ -344,6 +352,11 @@ export default function Home() {
       } else {
         setAdGroups([]); // 캠페인이 선택 해제되면 광고 그룹 목록 초기화
       }
+      
+      // 활성 탭이 광고 그룹인 경우 데이터 즉시 갱신
+      if (activeTab === 'adGroup') {
+        fetchReportData();
+      }
     } else if (type === 'adGroup') {
       setSelectedAdGroup(value);
       setSelectedKeyword(''); // 광고 그룹이 변경되면 키워드 선택 초기화
@@ -353,6 +366,11 @@ export default function Home() {
         fetchKeywords(value);
       } else {
         setKeywords([]); // 광고 그룹이 선택 해제되면 키워드 목록 초기화
+      }
+      
+      // 활성 탭이 광고 그룹인 경우 데이터 즉시 갱신
+      if (activeTab === 'adGroup') {
+        fetchReportData();
       }
     } else {
       setSelectedKeyword(value);
@@ -398,6 +416,9 @@ export default function Home() {
       }
       
       setKeywordData(filteredData);
+    } else if (activeTab === 'adGroup') {
+      // 광고 그룹 탭에서는 선택 변경 시 fetchReportData가 자동 호출되므로 
+      // 여기서는 별도 처리 필요 없음
     }
   };
 
