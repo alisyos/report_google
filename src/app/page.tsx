@@ -5,7 +5,7 @@ import DatePicker from 'react-datepicker';
 import ReportTable from './components/ReportTable';
 import DailyReportTable from './components/DailyReportTable';
 import { Loading, Error } from './components/StatusIndicator';
-import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup, fetchAdGroupReport, fetchCampaignDailyReport, fetchAdGroupDailyReport } from '@/lib/api';
+import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup, fetchAdGroupReport, fetchCampaignDailyReport, fetchAdGroupDailyReport, fetchKeywordDailyReport } from '@/lib/api';
 import { CampaignReport, KeywordReport, DateRange, AdGroup, Keyword, CampaignDailyReport, AdGroupDailyReport } from '@/types';
 import 'react-datepicker/dist/react-datepicker.css';
 import DateRangePicker from './components/DateRangePicker';
@@ -215,6 +215,40 @@ export default function Home() {
     }
   };
 
+  // 키워드 일별 성과 리포트 데이터 가져오기
+  const fetchKeywordDailyReportData = async (keywordId: string) => {
+    if (!keywordId) {
+      setShowDailyReport(false);
+      setDailyReportData([]);
+      return;
+    }
+
+    setLoadingDailyReport(true);
+    setError(null);
+
+    try {
+      console.log(`키워드 일별 리포트 요청 - 키워드 ID: ${keywordId}`);
+      
+      const report = await fetchKeywordDailyReport(dateRange, keywordId, selectedCampaign || undefined, selectedAdGroup || undefined);
+      
+      if (!report || report.length === 0) {
+        console.log('키워드 일별 데이터가 없습니다.');
+        setShowDailyReport(false);
+        setDailyReportData([]);
+      } else {
+        console.log(`${report.length}개의 키워드 일별 데이터 로드됨`);
+        setDailyReportData(report);
+        setShowDailyReport(true);
+      }
+    } catch (error: any) {
+      console.error('키워드 일별 리포트 로딩 중 오류 발생:', error);
+      setError('키워드 일별 리포트를 가져오는 중 오류가 발생했습니다.');
+      setShowDailyReport(false);
+    } finally {
+      setLoadingDailyReport(false);
+    }
+  };
+
   // 날짜 범위 변경 처리
   const handleDateChange = (key: 'startDate' | 'endDate', date: Date | null) => {
     if (date) {
@@ -315,6 +349,8 @@ export default function Home() {
       fetchDailyReportData(selectedCampaign);
     } else if (tabId === 'adGroup' && selectedAdGroup) {
       fetchAdGroupDailyReportData(selectedAdGroup);
+    } else if (tabId === 'keyword' && selectedKeywordId) {
+      fetchKeywordDailyReportData(selectedKeywordId);
     } else {
       setShowDailyReport(false);
       setDailyReportData([]);
@@ -549,7 +585,7 @@ export default function Home() {
     return [...new Set(filteredKeywords.map(k => k.keyword))];
   };
 
-  // 키워드 선택 핸들러
+  // 키워드 선택 핸들러 수정
   const handleKeywordSelect = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const keywordValue = event.target.value;
     setSelectedKeyword(keywordValue);
@@ -560,13 +596,23 @@ export default function Home() {
     if (keywordValue && keywords.length > 0) {
       const selectedKeywordObj = keywords.find(k => k.keyword === keywordValue);
       if (selectedKeywordObj) {
-        console.log(`선택된 키워드 ID: ${selectedKeywordObj.id}`);
-        setSelectedKeywordId(selectedKeywordObj.id);
+        const keywordId = selectedKeywordObj.id;
+        console.log(`선택된 키워드 ID: ${keywordId}`);
+        setSelectedKeywordId(keywordId);
+        
+        // 키워드 탭이 활성화되어 있고 키워드 ID가 있는 경우 일별 데이터 가져오기
+        if (activeTab === 'keyword' && keywordId) {
+          fetchKeywordDailyReportData(keywordId);
+        }
       } else {
         setSelectedKeywordId('');
+        setShowDailyReport(false);
+        setDailyReportData([]);
       }
     } else {
       setSelectedKeywordId('');
+      setShowDailyReport(false);
+      setDailyReportData([]);
     }
   };
 
@@ -763,6 +809,24 @@ export default function Home() {
                     <DailyReportTable 
                       data={dailyReportData} 
                       title="일별 광고 그룹 성과 리포트" 
+                    />
+                  ) : (
+                    <div className="bg-white p-4 rounded-lg shadow">
+                      <p className="text-gray-500">선택한 기간에 해당하는 일별 데이터가 없습니다.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* 일별 리포트 - 키워드 탭 */}
+              {showDailyReport && activeTab === 'keyword' && selectedKeywordId && (
+                <div className="mt-8">
+                  {loadingDailyReport ? (
+                    <Loading />
+                  ) : dailyReportData.length > 0 ? (
+                    <DailyReportTable 
+                      data={dailyReportData} 
+                      title="일별 키워드 성과 리포트" 
                     />
                   ) : (
                     <div className="bg-white p-4 rounded-lg shadow">
