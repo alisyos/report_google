@@ -10,7 +10,7 @@ interface Column {
 }
 
 interface ReportTableProps {
-  data: CampaignReport[] | KeywordReport[];
+  data: CampaignReport[] | KeywordReport[] | any[];
   title: string;
 }
 
@@ -63,102 +63,193 @@ export default function ReportTable({ data, title }: ReportTableProps) {
   // 평균 CTR 계산
   const avgCTR = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
 
+  // 리포트 타입 판별
+  const isCampaignReport = data.length > 0 && 'name' in data[0] && !('adGroupName' in data[0]) && !('campaignName' in data[0]);
+  const isKeywordReport = data.length > 0 && 'keyword' in data[0];
+  const isAdGroupReport = data.length > 0 && 'name' in data[0] && 'campaignName' in data[0];
+
   // 컬럼 정의
-  const isCampaignReport = data.length > 0 && 'name' in data[0];
-  const columns: Column[] = isCampaignReport
-    ? [
-        { header: '캠페인 ID', accessorKey: 'id' },
-        { header: '캠페인명', accessorKey: 'name' },
-        {
-          header: '노출 수',
-          accessorKey: 'impressions',
-          cell: (value) => value.toLocaleString(),
+  let columns: Column[] = [];
+  
+  if (isCampaignReport) {
+    columns = [
+      { header: '캠페인 ID', accessorKey: 'id' },
+      { header: '캠페인명', accessorKey: 'name' },
+      {
+        header: '노출 수',
+        accessorKey: 'impressions',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '클릭 수',
+        accessorKey: 'clicks',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '비용',
+        accessorKey: 'cost',
+        cell: (value) => {
+          console.log(`[ReportTable] 비용 데이터:`, {
+            value: value,
+            type: typeof value,
+            isNumber: typeof value === 'number',
+            isZero: value === 0,
+            stringified: JSON.stringify(value)
+          });
+          
+          if (value === undefined || value === null) return '₩0';
+          
+          // 숫자가 0이거나 문자열 '0'인 경우
+          if (value === 0 || value === '0') return '₩0';
+          
+          // 그 외의 경우는 숫자 형식으로 표시
+          return `₩${Number(value).toLocaleString('ko-KR')}`;
         },
-        {
-          header: '클릭 수',
-          accessorKey: 'clicks',
-          cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '전환 수',
+        accessorKey: 'conversions',
+        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      },
+      {
+        header: 'CTR',
+        accessorKey: 'ctr',
+        cell: (value) => `${(value * 100).toFixed(2)}%`,
+      },
+    ];
+  } else if (isKeywordReport) {
+    columns = [
+      { header: '키워드', accessorKey: 'keyword' },
+      { header: '캠페인명', accessorKey: 'campaignName' },
+      { header: '광고 그룹명', accessorKey: 'adGroupName' },
+      {
+        header: '노출 수',
+        accessorKey: 'impressions',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '클릭 수',
+        accessorKey: 'clicks',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '비용',
+        accessorKey: 'cost',
+        cell: (value) => {
+          console.log(`[ReportTable] 비용 데이터:`, {
+            value: value,
+            type: typeof value,
+            isNumber: typeof value === 'number',
+            isZero: value === 0,
+            stringified: JSON.stringify(value)
+          });
+          
+          if (value === undefined || value === null) return '₩0';
+          
+          // 숫자가 0이거나 문자열 '0'인 경우
+          if (value === 0 || value === '0') return '₩0';
+          
+          // 그 외의 경우는 숫자 형식으로 표시
+          return `₩${Number(value).toLocaleString('ko-KR')}`;
         },
-        {
-          header: '비용',
-          accessorKey: 'cost',
-          cell: (value) => {
-            // 콘솔에 출력하여 값 확인 (더 자세한 정보로 수정)
-            console.log(`[ReportTable] 비용 데이터:`, {
-              value: value,
-              type: typeof value,
-              isNumber: typeof value === 'number',
-              isZero: value === 0,
-              stringified: JSON.stringify(value)
-            });
-            
-            if (value === undefined || value === null) return '₩0';
-            
-            // 숫자가 0이거나 문자열 '0'인 경우
-            if (value === 0 || value === '0') return '₩0';
-            
-            // 그 외의 경우는 숫자 형식으로 표시
-            return `₩${Number(value).toLocaleString('ko-KR')}`;
-          },
+      },
+      {
+        header: '전환 수',
+        accessorKey: 'conversions',
+        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      },
+      {
+        header: 'CTR',
+        accessorKey: 'ctr',
+        cell: (value) => `${(value * 100).toFixed(2)}%`,
+      },
+    ];
+  } else if (isAdGroupReport) {
+    columns = [
+      { header: '광고 그룹 ID', accessorKey: 'id' },
+      { header: '광고 그룹명', accessorKey: 'name' },
+      {
+        header: '노출 수',
+        accessorKey: 'impressions',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '클릭 수',
+        accessorKey: 'clicks',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '비용',
+        accessorKey: 'cost',
+        cell: (value) => {
+          console.log(`[ReportTable] 비용 데이터:`, {
+            value: value,
+            type: typeof value,
+            isNumber: typeof value === 'number',
+            isZero: value === 0,
+            stringified: JSON.stringify(value)
+          });
+          
+          if (value === undefined || value === null) return '₩0';
+          
+          // 숫자가 0이거나 문자열 '0'인 경우
+          if (value === 0 || value === '0') return '₩0';
+          
+          // 그 외의 경우는 숫자 형식으로 표시
+          return `₩${Number(value).toLocaleString('ko-KR')}`;
         },
-        {
-          header: '전환 수',
-          accessorKey: 'conversions',
-          cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      },
+      {
+        header: '전환 수',
+        accessorKey: 'conversions',
+        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      },
+      {
+        header: 'CTR',
+        accessorKey: 'ctr',
+        cell: (value) => `${(value * 100).toFixed(2)}%`,
+      },
+    ];
+  } else {
+    // 기본 컬럼
+    columns = [
+      { header: 'ID', accessorKey: 'id' },
+      { header: '이름', accessorKey: 'name' },
+      {
+        header: '노출 수',
+        accessorKey: 'impressions',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '클릭 수',
+        accessorKey: 'clicks',
+        cell: (value) => value.toLocaleString(),
+      },
+      {
+        header: '비용',
+        accessorKey: 'cost',
+        cell: (value) => {
+          if (value === undefined || value === null) return '₩0';
+          
+          // 숫자가 0이거나 문자열 '0'인 경우
+          if (value === 0 || value === '0') return '₩0';
+          
+          // 그 외의 경우는 숫자 형식으로 표시
+          return `₩${Number(value).toLocaleString('ko-KR')}`;
         },
-        {
-          header: 'CTR',
-          accessorKey: 'ctr',
-          cell: (value) => `${(value * 100).toFixed(2)}%`,
-        },
-      ]
-    : [
-        { header: '키워드', accessorKey: 'keyword' },
-        { header: '캠페인명', accessorKey: 'campaignName' },
-        { header: '광고 그룹명', accessorKey: 'adGroupName' },
-        {
-          header: '노출 수',
-          accessorKey: 'impressions',
-          cell: (value) => value.toLocaleString(),
-        },
-        {
-          header: '클릭 수',
-          accessorKey: 'clicks',
-          cell: (value) => value.toLocaleString(),
-        },
-        {
-          header: '비용',
-          accessorKey: 'cost',
-          cell: (value) => {
-            // 콘솔에 출력하여 값 확인 (더 자세한 정보로 수정)
-            console.log(`[ReportTable] 비용 데이터:`, {
-              value: value,
-              type: typeof value,
-              isNumber: typeof value === 'number',
-              isZero: value === 0,
-              stringified: JSON.stringify(value)
-            });
-            
-            if (value === undefined || value === null) return '₩0';
-            
-            // 숫자가 0이거나 문자열 '0'인 경우
-            if (value === 0 || value === '0') return '₩0';
-            
-            // 그 외의 경우는 숫자 형식으로 표시
-            return `₩${Number(value).toLocaleString('ko-KR')}`;
-          },
-        },
-        {
-          header: '전환 수',
-          accessorKey: 'conversions',
-          cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
-        },
-        {
-          header: 'CTR',
-          accessorKey: 'ctr',
-          cell: (value) => `${(value * 100).toFixed(2)}%`,
-        },
-      ];
+      },
+      {
+        header: '전환 수',
+        accessorKey: 'conversions',
+        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+      },
+      {
+        header: 'CTR',
+        accessorKey: 'ctr',
+        cell: (value) => `${(value * 100).toFixed(2)}%`,
+      },
+    ];
+  }
 
   return (
     <div className="bg-white shadow rounded-lg overflow-hidden mt-4">
@@ -208,7 +299,7 @@ export default function ReportTable({ data, title }: ReportTableProps) {
                 {/* 합계 행 추가 */}
                 <tr className="bg-gray-100 font-semibold">
                   <td
-                    colSpan={isCampaignReport ? 2 : 3}
+                    colSpan={isKeywordReport ? 3 : 2}
                     className="px-6 py-4 whitespace-nowrap text-sm"
                   >
                     합계
