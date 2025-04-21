@@ -48,6 +48,21 @@ export default function ReportTable({ data, title }: ReportTableProps) {
     return 0;
   });
 
+  // 합계 계산
+  const totals = data.reduce(
+    (acc, item: any) => {
+      acc.impressions += Number(item.impressions) || 0;
+      acc.clicks += Number(item.clicks) || 0;
+      acc.cost += Number(item.cost) || 0;
+      acc.conversions += Number(item.conversions) || 0;
+      return acc;
+    },
+    { impressions: 0, clicks: 0, cost: 0, conversions: 0 }
+  );
+
+  // 평균 CTR 계산
+  const avgCTR = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
+
   // 컬럼 정의
   const isCampaignReport = data.length > 0 && 'name' in data[0];
   const columns: Column[] = isCampaignReport
@@ -67,7 +82,24 @@ export default function ReportTable({ data, title }: ReportTableProps) {
         {
           header: '비용',
           accessorKey: 'cost',
-          cell: (value) => `₩${value.toLocaleString()}`,
+          cell: (value) => {
+            // 콘솔에 출력하여 값 확인 (더 자세한 정보로 수정)
+            console.log(`[ReportTable] 비용 데이터:`, {
+              value: value,
+              type: typeof value,
+              isNumber: typeof value === 'number',
+              isZero: value === 0,
+              stringified: JSON.stringify(value)
+            });
+            
+            if (value === undefined || value === null) return '₩0';
+            
+            // 숫자가 0이거나 문자열 '0'인 경우
+            if (value === 0 || value === '0') return '₩0';
+            
+            // 그 외의 경우는 숫자 형식으로 표시
+            return `₩${Number(value).toLocaleString('ko-KR')}`;
+          },
         },
         {
           header: '전환 수',
@@ -97,7 +129,24 @@ export default function ReportTable({ data, title }: ReportTableProps) {
         {
           header: '비용',
           accessorKey: 'cost',
-          cell: (value) => `₩${value.toLocaleString()}`,
+          cell: (value) => {
+            // 콘솔에 출력하여 값 확인 (더 자세한 정보로 수정)
+            console.log(`[ReportTable] 비용 데이터:`, {
+              value: value,
+              type: typeof value,
+              isNumber: typeof value === 'number',
+              isZero: value === 0,
+              stringified: JSON.stringify(value)
+            });
+            
+            if (value === undefined || value === null) return '₩0';
+            
+            // 숫자가 0이거나 문자열 '0'인 경우
+            if (value === 0 || value === '0') return '₩0';
+            
+            // 그 외의 경우는 숫자 형식으로 표시
+            return `₩${Number(value).toLocaleString('ko-KR')}`;
+          },
         },
         {
           header: '전환 수',
@@ -141,20 +190,46 @@ export default function ReportTable({ data, title }: ReportTableProps) {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {sortedData.length > 0 ? (
-              sortedData.map((row, rowIndex) => (
-                <tr key={rowIndex} className="hover:bg-gray-50">
-                  {columns.map((column) => (
-                    <td
-                      key={`${rowIndex}-${column.accessorKey}`}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                    >
-                      {column.cell
-                        ? column.cell((row as any)[column.accessorKey])
-                        : (row as any)[column.accessorKey]}
-                    </td>
-                  ))}
+              <>
+                {sortedData.map((row, rowIndex) => (
+                  <tr key={rowIndex} className="hover:bg-gray-50">
+                    {columns.map((column) => (
+                      <td
+                        key={`${rowIndex}-${column.accessorKey}`}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      >
+                        {column.cell
+                          ? column.cell((row as any)[column.accessorKey])
+                          : (row as any)[column.accessorKey]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {/* 합계 행 추가 */}
+                <tr className="bg-gray-100 font-semibold">
+                  <td
+                    colSpan={isCampaignReport ? 2 : 3}
+                    className="px-6 py-4 whitespace-nowrap text-sm"
+                  >
+                    합계
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {totals.impressions.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {totals.clicks.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {totals.cost === 0 ? '₩0' : `₩${totals.cost.toLocaleString('ko-KR')}`}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {totals.conversions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {(avgCTR * 100).toFixed(2)}%
+                  </td>
                 </tr>
-              ))
+              </>
             ) : (
               <tr>
                 <td

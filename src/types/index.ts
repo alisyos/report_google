@@ -9,6 +9,18 @@ export interface CampaignReport {
   ctr: number;
 }
 
+// 일별 캠페인 리포트 데이터 타입
+export interface CampaignDailyReport {
+  id: string;
+  name: string;
+  date: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  ctr: number;
+}
+
 // 키워드 리포트 데이터 타입
 export interface KeywordReport {
   keyword: string;

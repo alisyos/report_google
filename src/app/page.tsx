@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react';
 import DatePicker from 'react-datepicker';
 import ReportTable from './components/ReportTable';
+import DailyReportTable from './components/DailyReportTable';
 import { Loading, Error } from './components/StatusIndicator';
-import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup } from '@/lib/api';
-import { CampaignReport, KeywordReport, DateRange, AdGroup, Keyword } from '@/types';
+import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup, fetchAdGroupReport, fetchCampaignDailyReport } from '@/lib/api';
+import { CampaignReport, KeywordReport, DateRange, AdGroup, Keyword, CampaignDailyReport } from '@/types';
 import 'react-datepicker/dist/react-datepicker.css';
 
 export default function Home() {
@@ -28,6 +29,10 @@ export default function Home() {
   const [endDate, setEndDate] = useState<Date | null>(today);
   const [campaignData, setCampaignData] = useState<CampaignReport[]>([]);
   const [keywordData, setKeywordData] = useState<KeywordReport[]>([]);
+  const [adGroupReportData, setAdGroupReportData] = useState<any[]>([]);
+  const [dailyReportData, setDailyReportData] = useState<CampaignDailyReport[]>([]);
+  const [showDailyReport, setShowDailyReport] = useState<boolean>(false);
+  const [loadingDailyReport, setLoadingDailyReport] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
@@ -47,11 +52,18 @@ export default function Home() {
     try {
       if (activeTab === 'campaign') {
         // 캠페인 탭일 때는 이미 데이터가 있으므로 필터링만 적용
-        let filteredData = [...campaignData];
+        let filteredData = [...allCampaigns];
         
         // 캠페인 필터 적용
         if (selectedCampaign) {
           filteredData = filteredData.filter(item => item.id === selectedCampaign);
+          
+          // 선택된 캠페인이 있으면 일별 데이터도 가져오기
+          await fetchDailyReportData(selectedCampaign);
+        } else {
+          // 캠페인이 선택되지 않았으면 일별 데이터 숨기기
+          setShowDailyReport(false);
+          setDailyReportData([]);
         }
         
         setCampaignData(filteredData);
@@ -64,11 +76,17 @@ export default function Home() {
           
           // 캠페인 필터 적용
           if (selectedCampaign) {
-            filteredData = filteredData.filter(item => item.campaignName === selectedCampaign);
+            const campaign = allCampaigns.find(c => c.id === selectedCampaign);
+            if (campaign) {
+              filteredData = filteredData.filter(item => item.campaignName === campaign.name);
+            }
             
             // 광고 그룹 필터 적용
             if (selectedAdGroup) {
-              filteredData = filteredData.filter(item => item.adGroupName === selectedAdGroup);
+              const adGroup = adGroups.find(g => g.id === selectedAdGroup);
+              if (adGroup) {
+                filteredData = filteredData.filter(item => item.adGroupName === adGroup.name);
+              }
               
               // 키워드 필터 적용
               if (selectedKeyword) {
@@ -79,11 +97,56 @@ export default function Home() {
           
           setKeywordData(filteredData);
         }
+      } else if (activeTab === 'adGroup') {
+        // 광고 그룹 리포트 데이터 가져오기
+        const response = await fetchAdGroupReport(
+          dateRange,
+          selectedCampaign || undefined,
+          selectedAdGroup || undefined
+        );
+        
+        if (response.error) {
+          setError(response.error);
+        } else {
+          setAdGroupReportData(response.data || []);
+        }
       }
     } catch (err: any) {
       setError(err.message || '리포트 데이터를 가져오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 일별 리포트 데이터 가져오기
+  const fetchDailyReportData = async (campaignId: string) => {
+    if (!campaignId) {
+      setShowDailyReport(false);
+      setDailyReportData([]);
+      return;
+    }
+
+    setLoadingDailyReport(true);
+    setError(null);
+
+    try {
+      const response = await fetchCampaignDailyReport(dateRange, campaignId);
+      
+      if (response.error) {
+        console.error('일별 리포트 가져오기 오류:', response.error);
+        setError(response.error);
+        setShowDailyReport(false);
+      } else {
+        console.log(`${response.data?.length || 0}개의 일별 데이터 로드됨`);
+        setDailyReportData(response.data || []);
+        setShowDailyReport(true);
+      }
+    } catch (error) {
+      console.error('일별 리포트 로딩 중 오류 발생:', error);
+      setError('일별 리포트를 가져오는 중 오류가 발생했습니다.');
+      setShowDailyReport(false);
+    } finally {
+      setLoadingDailyReport(false);
     }
   };
 
@@ -125,7 +188,7 @@ export default function Home() {
       }
       
       return filtered;
-    } else {
+    } else if (activeTab === 'keyword') {
       let filtered = keywordData;
       
       // 선택된 캠페인에 따라 필터링
@@ -150,6 +213,8 @@ export default function Home() {
       }
       
       return filtered;
+    } else {
+      return adGroupReportData;
     }
   };
 
@@ -160,10 +225,15 @@ export default function Home() {
         currentData: getFilteredData(),
         reportTitle: '캠페인 퍼포먼스 리포트'
       };
-    } else {
+    } else if (activeTab === 'keyword') {
       return {
         currentData: getFilteredData(),
         reportTitle: '키워드 퍼포먼스 리포트'
+      };
+    } else {
+      return {
+        currentData: adGroupReportData,
+        reportTitle: '광고 그룹 퍼포먼스 리포트'
       };
     }
   };
@@ -173,6 +243,14 @@ export default function Home() {
   // 탭 변경 처리
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
+    
+    // 탭 변경 시 일별 리포트 상태 업데이트
+    if (tabId === 'campaign' && selectedCampaign) {
+      fetchDailyReportData(selectedCampaign);
+    } else {
+      setShowDailyReport(false);
+      setDailyReportData([]);
+    }
   };
 
   // 캠페인 ID로 광고 그룹 가져오기
@@ -250,6 +328,15 @@ export default function Home() {
       setSelectedAdGroup(''); // 캠페인이 변경되면 광고 그룹 선택 초기화
       setSelectedKeyword(''); // 캠페인이 변경되면 키워드 선택 초기화
       setKeywords([]); // 키워드 목록 초기화
+      
+      // 캠페인이 선택되었고 캠페인 탭이 활성화되어 있으면 일별 데이터 가져오기
+      if (value && activeTab === 'campaign') {
+        fetchDailyReportData(value);
+      } else {
+        // 캠페인이 선택 해제되면 일별 데이터 숨기기
+        setShowDailyReport(false);
+        setDailyReportData([]);
+      }
       
       // 캠페인이 선택되면 즉시 광고 그룹 데이터 가져오기
       if (value) {
@@ -498,6 +585,16 @@ export default function Home() {
           </button>
           <button
             className={`px-4 py-2 font-medium text-sm ${
+              activeTab === 'adGroup'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+            onClick={() => handleTabChange('adGroup')}
+          >
+            광고 그룹 리포트
+          </button>
+          <button
+            className={`px-4 py-2 font-medium text-sm ${
               activeTab === 'keyword'
                 ? 'text-blue-600 border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-700'
@@ -516,26 +613,6 @@ export default function Home() {
           리포트 생성
         </button>
         
-        {/* 키워드 목록 디버깅 섹션 */}
-        <div className="mb-6 bg-white rounded-lg shadow p-4">
-          <h2 className="text-lg font-medium mb-3">키워드 데이터 ({keywords.length}개)</h2>
-          {loadingKeywords ? (
-            <p>키워드 로딩 중...</p>
-          ) : keywords.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-              {keywords.map(keyword => (
-                <div key={keyword.id} className="border border-gray-200 rounded p-2 bg-gray-50">
-                  <div className="font-medium text-blue-600">{keyword.keyword}</div>
-                  <div className="text-sm text-gray-600">ID: {keyword.id}</div>
-                  <div className="text-sm text-gray-600">그룹: {keyword.adGroupName}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500">선택된 광고 그룹에 키워드가 없거나 아직 광고 그룹을 선택하지 않았습니다.</p>
-          )}
-        </div>
-        
         {/* 리포트 내용 */}
         <div className="mt-4">
           {loading ? (
@@ -543,7 +620,27 @@ export default function Home() {
           ) : error ? (
             <Error message={error} onRetry={fetchReportData} />
           ) : (
-            <ReportTable data={currentData} title={reportTitle} />
+            <>
+              <ReportTable data={currentData} title={reportTitle} />
+              
+              {/* 일별 리포트 */}
+              {showDailyReport && activeTab === 'campaign' && selectedCampaign && (
+                <div className="mt-8">
+                  {loadingDailyReport ? (
+                    <Loading />
+                  ) : dailyReportData.length > 0 ? (
+                    <DailyReportTable 
+                      data={dailyReportData} 
+                      title="일별 캠페인 성과 리포트" 
+                    />
+                  ) : (
+                    <div className="bg-white p-4 rounded-lg shadow">
+                      <p className="text-gray-500">선택한 기간에 해당하는 일별 데이터가 없습니다.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
