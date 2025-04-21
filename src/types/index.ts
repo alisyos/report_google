@@ -27,7 +27,25 @@ export interface DateRange {
   endDate: string;
 }
 
-// API 응답 타입
+// 광고 그룹 데이터 타입
+export interface AdGroup {
+  id: string;
+  name: string;
+  campaignId: string;
+  campaignName: string;
+}
+
+// 키워드 데이터 타입
+export interface Keyword {
+  id: string;
+  keyword: string;
+  adGroupId: string;
+  adGroupName: string;
+  campaignId: string;
+  campaignName: string;
+}
+
+// API 응답 타입 확장
 export interface ApiResponse<T> {
   data?: T[];
   error?: string;

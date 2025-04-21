@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import DatePicker from 'react-datepicker';
 import ReportTable from './components/ReportTable';
 import { Loading, Error } from './components/StatusIndicator';
-import { fetchCampaignReport, fetchKeywordReport } from '@/lib/api';
-import { CampaignReport, KeywordReport, DateRange } from '@/types';
+import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup } from '@/lib/api';
+import { CampaignReport, KeywordReport, DateRange, AdGroup, Keyword } from '@/types';
 import 'react-datepicker/dist/react-datepicker.css';
 
 export default function Home() {
@@ -33,6 +33,11 @@ export default function Home() {
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
   const [selectedAdGroup, setSelectedAdGroup] = useState<string>('');
   const [selectedKeyword, setSelectedKeyword] = useState<string>('');
+  const [adGroups, setAdGroups] = useState<AdGroup[]>([]);
+  const [loadingAdGroups, setLoadingAdGroups] = useState<boolean>(false);
+  const [keywords, setKeywords] = useState<Keyword[]>([]);
+  const [loadingKeywords, setLoadingKeywords] = useState<boolean>(false);
+  const [allCampaigns, setAllCampaigns] = useState<CampaignReport[]>([]);
 
   // 리포트 데이터 가져오기
   const fetchReportData = async () => {
@@ -41,19 +46,15 @@ export default function Home() {
 
     try {
       if (activeTab === 'campaign') {
-        const response = await fetchCampaignReport(dateRange);
-        if (response.error) {
-          setError(response.error);
-        } else {
-          let filteredData = response.data || [];
-          
-          // 캠페인 필터 적용
-          if (selectedCampaign) {
-            filteredData = filteredData.filter(item => item.id === selectedCampaign);
-          }
-          
-          setCampaignData(filteredData);
+        // 캠페인 탭일 때는 이미 데이터가 있으므로 필터링만 적용
+        let filteredData = [...campaignData];
+        
+        // 캠페인 필터 적용
+        if (selectedCampaign) {
+          filteredData = filteredData.filter(item => item.id === selectedCampaign);
         }
+        
+        setCampaignData(filteredData);
       } else if (activeTab === 'keyword') {
         const response = await fetchKeywordReport(dateRange);
         if (response.error) {
@@ -114,35 +115,162 @@ export default function Home() {
     });
   };
 
+  // 데이터 타입에 따른 적절한 필터 적용
+  const getFilteredData = () => {
+    if (activeTab === 'campaign') {
+      let filtered = campaignData;
+      
+      if (selectedCampaign) {
+        filtered = filtered.filter(c => c.id === selectedCampaign);
+      }
+      
+      return filtered;
+    } else {
+      let filtered = keywordData;
+      
+      // 선택된 캠페인에 따라 필터링
+      if (selectedCampaign) {
+        const campaign = campaignData.find(c => c.id === selectedCampaign);
+        if (campaign) {
+          filtered = filtered.filter(k => k.campaignName === campaign.name);
+        }
+      }
+      
+      // 선택된 광고 그룹에 따라 필터링
+      if (selectedAdGroup) {
+        const adGroup = adGroups.find(g => g.id === selectedAdGroup);
+        if (adGroup) {
+          filtered = filtered.filter(k => k.adGroupName === adGroup.name);
+        }
+      }
+      
+      // 선택된 키워드에 따라 필터링
+      if (selectedKeyword) {
+        filtered = filtered.filter(k => k.keyword === selectedKeyword);
+      }
+      
+      return filtered;
+    }
+  };
+
   // 현재 탭에 따라 표시할 데이터 결정
-  const currentData =
-    activeTab === 'campaign' ? campaignData : keywordData;
-  const reportTitle =
-    activeTab === 'campaign' ? '캠페인 퍼포먼스 리포트' : '키워드 퍼포먼스 리포트';
-    
+  const getReportData = () => {
+    if (activeTab === 'campaign') {
+      return {
+        currentData: getFilteredData(),
+        reportTitle: '캠페인 퍼포먼스 리포트'
+      };
+    } else {
+      return {
+        currentData: getFilteredData(),
+        reportTitle: '키워드 퍼포먼스 리포트'
+      };
+    }
+  };
+
+  const { currentData, reportTitle } = getReportData();
+
   // 탭 변경 처리
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
   };
 
-  // 필터 변경 처리 함수 추가
+  // 캠페인 ID로 광고 그룹 가져오기
+  const fetchAdGroups = async (campaignId: string) => {
+    if (!campaignId) {
+      setAdGroups([]);
+      return;
+    }
+    
+    setLoadingAdGroups(true);
+    try {
+      console.log(`캠페인 ID로 광고 그룹 가져오기: ${campaignId}`);
+      const response = await fetchAdGroupsByCampaign(campaignId);
+      if (response.error) {
+        console.error('광고 그룹 로딩 오류:', response.error);
+        setAdGroups([]);
+      } else {
+        console.log(`${response.data?.length || 0}개의 광고 그룹 데이터 로드됨`);
+        setAdGroups(response.data || []);
+      }
+    } catch (error) {
+      console.error('광고 그룹 로딩 중 오류 발생:', error);
+      setAdGroups([]);
+    } finally {
+      setLoadingAdGroups(false);
+    }
+  };
+
+  // 캠페인 목록만 가져오는 함수 수정
+  const fetchCampaignList = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetchCampaignReport(dateRange);
+      if (response.error) {
+        setError(response.error);
+      } else {
+        const campaigns = response.data || [];
+        setAllCampaigns(campaigns); // 모든 캠페인 목록 저장
+        setCampaignData(campaigns); // 필터링 적용 가능한 데이터 복사본
+      }
+    } catch (err: any) {
+      setError(err.message || '캠페인 목록을 가져오는 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 페이지 로드 시 캠페인 목록만 가져오기
+  useEffect(() => {
+    fetchCampaignList();
+  }, []); // 페이지 로드 시 1회만 실행
+
+  // 날짜 범위 변경 시 데이터를 자동으로 가져오지 않음
+  useEffect(() => {
+    // 날짜 변경 시 자동으로 데이터 로딩하지 않음
+    // fetchReportData();
+  }, [dateRange]);
+
+  // 탭 변경 시 필터 초기화
+  useEffect(() => {
+    // 탭이 변경되면 필터 초기화
+    setSelectedCampaign('');
+    setSelectedAdGroup('');
+    setSelectedKeyword('');
+    setAdGroups([]);
+    setKeywords([]);
+  }, [activeTab]);
+
+  // 필터 변경 처리 함수 수정
   const handleFilterChange = (type: 'campaign' | 'adGroup' | 'keyword', value: string) => {
     if (type === 'campaign') {
       setSelectedCampaign(value);
       setSelectedAdGroup(''); // 캠페인이 변경되면 광고 그룹 선택 초기화
       setSelectedKeyword(''); // 캠페인이 변경되면 키워드 선택 초기화
+      setKeywords([]); // 키워드 목록 초기화
+      
+      // 캠페인이 선택되면 즉시 광고 그룹 데이터 가져오기
+      if (value) {
+        fetchAdGroups(value);
+      } else {
+        setAdGroups([]); // 캠페인이 선택 해제되면 광고 그룹 목록 초기화
+      }
     } else if (type === 'adGroup') {
       setSelectedAdGroup(value);
       setSelectedKeyword(''); // 광고 그룹이 변경되면 키워드 선택 초기화
+      
+      // 광고 그룹이 선택되면 즉시 키워드 데이터 가져오기
+      if (value) {
+        fetchKeywords(value);
+      } else {
+        setKeywords([]); // 광고 그룹이 선택 해제되면 키워드 목록 초기화
+      }
     } else {
       setSelectedKeyword(value);
     }
   };
-
-  // 페이지 로드 시 초기 데이터 로딩
-  useEffect(() => {
-    fetchReportData();
-  }, []); // 페이지 로드 시 1회만 실행
 
   // 필터 변경 시 데이터 업데이트
   useEffect(() => {
@@ -152,18 +280,19 @@ export default function Home() {
     }
   }, [selectedCampaign, selectedAdGroup, selectedKeyword]);
 
-  // 필터 적용 함수
+  // 필터 적용 함수 수정
   const applyFilters = () => {
     if (activeTab === 'campaign') {
-      let filteredData = campaignData;
-      
-      // 캠페인 필터 적용
+      // 캠페인 필터링은 더이상 실제 데이터를 변경하지 않음
+      // 리포트 테이블에 표시될 내용만 필터링되도록 수정
       if (selectedCampaign) {
-        filteredData = filteredData.filter(item => item.id === selectedCampaign);
+        const filteredData = allCampaigns.filter(item => item.id === selectedCampaign);
+        setCampaignData(filteredData);
+      } else {
+        setCampaignData(allCampaigns);
       }
-      
-      setCampaignData(filteredData);
     } else if (activeTab === 'keyword') {
+      // 기존 코드 유지
       let filteredData = keywordData;
       
       // 캠페인 필터 적용
@@ -185,6 +314,62 @@ export default function Home() {
     }
   };
 
+  // 광고 그룹 ID로 키워드 가져오기
+  const fetchKeywords = async (adGroupId: string) => {
+    if (!adGroupId) {
+      setKeywords([]);
+      return;
+    }
+    
+    setLoadingKeywords(true);
+    try {
+      console.log(`광고 그룹 ID로 키워드 가져오기: ${adGroupId}`);
+      const response = await fetchKeywordsByAdGroup(adGroupId);
+      if (response.error) {
+        console.error('키워드 로딩 오류:', response.error);
+        setKeywords([]);
+      } else {
+        console.log(`${response.data?.length || 0}개의 키워드 데이터 로드됨`);
+        setKeywords(response.data || []);
+      }
+    } catch (error) {
+      console.error('키워드 로딩 중 오류 발생:', error);
+      setKeywords([]);
+    } finally {
+      setLoadingKeywords(false);
+    }
+  };
+
+  // 키워드 필터링을 위한 유니크 키워드 리스트 가져오기
+  const getUniqueKeywords = () => {
+    // 이미 가져온 키워드 데이터가 있으면 해당 데이터에서 중복 제거한 목록 반환
+    if (keywords.length > 0) {
+      return [...new Set(keywords.map(k => k.keyword))];
+    }
+    
+    // 없으면 키워드 리포트 데이터에서 필터링
+    let filteredKeywords = keywordData;
+    
+    // 선택된 캠페인에 따라 필터링
+    if (selectedCampaign) {
+      const campaign = campaignData.find(c => c.id === selectedCampaign);
+      if (campaign) {
+        filteredKeywords = keywordData.filter(k => k.campaignName === campaign.name);
+      }
+    }
+    
+    // 선택된 광고 그룹에 따라 필터링
+    if (selectedAdGroup) {
+      const adGroup = adGroups.find(g => g.id === selectedAdGroup);
+      if (adGroup) {
+        filteredKeywords = filteredKeywords.filter(k => k.adGroupName === adGroup.name);
+      }
+    }
+    
+    // 중복 제거한 키워드 목록 반환
+    return [...new Set(filteredKeywords.map(k => k.keyword))];
+  };
+
   return (
     <main className="flex min-h-screen flex-col p-6 bg-gray-50">
       <div className="max-w-7xl mx-auto w-full">
@@ -200,7 +385,7 @@ export default function Home() {
               onChange={(e) => handleFilterChange('campaign', e.target.value)}
             >
               <option value="">모든 캠페인</option>
-              {campaignData.map(campaign => (
+              {allCampaigns.map(campaign => (
                 <option key={campaign.id} value={campaign.id}>
                   {campaign.name}
                 </option>
@@ -214,19 +399,18 @@ export default function Home() {
               className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedAdGroup}
               onChange={(e) => handleFilterChange('adGroup', e.target.value)}
-              disabled={!selectedCampaign || activeTab !== 'keyword'}
+              disabled={!selectedCampaign || loadingAdGroups}
             >
               <option value="">모든 광고 그룹</option>
-              {keywordData
-                .filter(item => !selectedCampaign || item.campaignName === selectedCampaign)
-                .map(item => item.adGroupName)
-                .filter((value, index, self) => self.indexOf(value) === index) // 중복 제거
-                .map(adGroupName => (
-                  <option key={adGroupName} value={adGroupName}>
-                    {adGroupName}
+              {loadingAdGroups ? (
+                <option disabled>로딩 중...</option>
+              ) : (
+                adGroups.map(adGroup => (
+                  <option key={adGroup.id} value={adGroup.id}>
+                    {adGroup.name}
                   </option>
                 ))
-              }
+              )}
             </select>
           </div>
           
@@ -236,22 +420,18 @@ export default function Home() {
               className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedKeyword}
               onChange={(e) => handleFilterChange('keyword', e.target.value)}
-              disabled={!selectedAdGroup || activeTab !== 'keyword'}
+              disabled={!selectedAdGroup || loadingKeywords}
             >
               <option value="">모든 키워드</option>
-              {keywordData
-                .filter(item => 
-                  (!selectedCampaign || item.campaignName === selectedCampaign) &&
-                  (!selectedAdGroup || item.adGroupName === selectedAdGroup)
-                )
-                .map(item => item.keyword)
-                .filter((value, index, self) => self.indexOf(value) === index) // 중복 제거
-                .map(keyword => (
+              {loadingKeywords ? (
+                <option disabled>로딩 중...</option>
+              ) : (
+                getUniqueKeywords().map(keyword => (
                   <option key={keyword} value={keyword}>
                     {keyword}
                   </option>
                 ))
-              }
+              )}
             </select>
           </div>
         </div>
@@ -335,6 +515,26 @@ export default function Home() {
         >
           리포트 생성
         </button>
+        
+        {/* 키워드 목록 디버깅 섹션 */}
+        <div className="mb-6 bg-white rounded-lg shadow p-4">
+          <h2 className="text-lg font-medium mb-3">키워드 데이터 ({keywords.length}개)</h2>
+          {loadingKeywords ? (
+            <p>키워드 로딩 중...</p>
+          ) : keywords.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+              {keywords.map(keyword => (
+                <div key={keyword.id} className="border border-gray-200 rounded p-2 bg-gray-50">
+                  <div className="font-medium text-blue-600">{keyword.keyword}</div>
+                  <div className="text-sm text-gray-600">ID: {keyword.id}</div>
+                  <div className="text-sm text-gray-600">그룹: {keyword.adGroupName}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">선택된 광고 그룹에 키워드가 없거나 아직 광고 그룹을 선택하지 않았습니다.</p>
+          )}
+        </div>
         
         {/* 리포트 내용 */}
         <div className="mt-4">

@@ -2,7 +2,6 @@
  * 구글 광고 API 연동 모듈
  * 
  * 구글 광고 API를 사용하여 캠페인 정보와 성과 보고서를 가져옵니다.
- * 오류 발생 시 모의 데이터로 대체합니다.
  * 
  * 구글 광고 API 연동에 필요한 단계:
  * 1. 구글 클라우드 콘솔에서 OAuth 클라이언트 ID 및 시크릿 발급
@@ -22,8 +21,7 @@ const REFRESH_TOKEN = process.env.GOOGLE_ADS_REFRESH_TOKEN || '';
 const CUSTOMER_ID = process.env.GOOGLE_ADS_CUSTOMER_ID || '';
 const LOGIN_CUSTOMER_ID = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '';
 
-// API 호출 여부를 결정하는 환경 변수 (기본값은 false - 목업 데이터 사용)
-const USE_REAL_API = process.env.USE_REAL_API === 'true';
+// API 버전
 const API_VERSION = process.env.API_VERSION || '19';
 
 // API 기본 URL
@@ -37,7 +35,6 @@ console.log('- REFRESH_TOKEN: ' + (REFRESH_TOKEN ? '설정됨' : '설정되지 �
 console.log('- DEVELOPER_TOKEN: ' + (DEVELOPER_TOKEN ? '설정됨' : '설정되지 않음'));
 console.log('- CUSTOMER_ID: ' + CUSTOMER_ID); // 실제 값 출력
 console.log('- LOGIN_CUSTOMER_ID: ' + (LOGIN_CUSTOMER_ID ? '설정됨' : '설정되지 않음'));
-console.log(`- USE_REAL_API: ${USE_REAL_API}`);
 console.log(`- API_VERSION: ${API_VERSION}`);
 
 // 액세스 토큰 가져오기
@@ -100,7 +97,6 @@ function logEnvironmentVars() {
   console.log(`- REFRESH_TOKEN: ${REFRESH_TOKEN ? '설정됨' : '설정되지 않음'}`);
   console.log(`- CUSTOMER_ID: ${CUSTOMER_ID || '설정되지 않음'}`);
   console.log(`- LOGIN_CUSTOMER_ID: ${LOGIN_CUSTOMER_ID || '설정되지 않음'}`);
-  console.log(`- USE_REAL_API: ${USE_REAL_API}`);
   console.log(`- API_VERSION: ${API_VERSION}`);
 }
 
@@ -110,7 +106,7 @@ function logEnvironmentVars() {
  * 구글 광고 API 호출 시 여러 형식의 엔드포인트를 시도합니다.
  * 실패 시 다른 형식으로 재시도합니다.
  */
-export async function tryMultipleEndpoints(query: string, type: string, startDate?: string, endDate?: string) {
+export async function tryMultipleEndpoints(query: string) {
   // 시도할 엔드포인트 형식 목록
   const endpointFormats = [
     // 표준 형식
@@ -135,6 +131,14 @@ export async function tryMultipleEndpoints(query: string, type: string, startDat
       const response = await axios.post(endpoint, { query }, { headers });
       
       console.log('API 호출 성공!');
+      console.log('API 응답 데이터 구조:', JSON.stringify({
+        status: response.status,
+        hasResults: !!response.data.results,
+        resultsLength: Array.isArray(response.data.results) ? response.data.results.length : 'not array',
+        dataKeys: Object.keys(response.data),
+        sampleData: response.data.results && response.data.results.length > 0 ? response.data.results[0] : null
+      }, null, 2));
+      
       return response.data.results || [];
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -151,25 +155,13 @@ export async function tryMultipleEndpoints(query: string, type: string, startDat
   
   // 모든 엔드포인트 시도 실패
   console.error('모든 엔드포인트 시도 실패:', JSON.stringify(errors, null, 2));
-  console.log('모의 데이터로 대체합니다.');
-  
-  // 모든 재시도 실패 시 모의 데이터 반환
-  if (type === 'campaigns') {
-    return getMockCampaigns();
-  } else if (type === 'campaign_report' && startDate && endDate) {
-    return getMockCampaignReport();
-  } else if (type === 'keyword_report' && startDate && endDate) {
-    return getMockKeywordReport();
-  }
-  
-  return [];
+  throw new Error('모든 API 엔드포인트 시도 실패');
 }
 
 /**
  * 캠페인 목록 가져오기
  * 
  * 구글 광고 API를 통해 계정의 캠페인 목록을 가져옵니다.
- * API 연동 실패 시 모의 데이터를 반환합니다.
  */
 export async function getCampaigns() {
   try {
@@ -177,41 +169,24 @@ export async function getCampaigns() {
     console.log('getCampaigns() 호출됨');
     logEnvironmentVars();
     
-    // 실제 환경에서는 API를 호출합니다.
-    if (USE_REAL_API) {
-      const endpoint = `/v${API_VERSION}/customers/${CUSTOMER_ID}/googleAds:search`;
-      console.log(`엔드포인트: ${endpoint}`);
-      
-      const query = `
-        SELECT 
-          campaign.id, 
-          campaign.name, 
-          campaign.status,
-          campaign_budget.amount_micros
-        FROM campaign
-        ORDER BY campaign.name
-        LIMIT 50
-      `;
-      
-      console.log('API 쿼리:', query);
-      
-      // Axios를 통해 API 요청
-      try {
-        return await tryMultipleEndpoints(query, 'campaigns');
-      } catch (error) {
-        console.error('API 호출 실패:', error);
-        console.log('목업 데이터로 대체합니다.');
-        return getMockCampaigns();
-      }
-    }
+    const query = `
+      SELECT 
+        campaign.id, 
+        campaign.name, 
+        campaign.status,
+        campaign_budget.amount_micros
+      FROM campaign
+      ORDER BY campaign.name
+      LIMIT 50
+    `;
     
-    // 개발 환경에서는 목업 데이터를 반환합니다.
-    console.log('목업 데이터 반환: getCampaigns');
-    return getMockCampaigns();
+    console.log('API 쿼리:', query);
+    
+    // API 요청
+    return await tryMultipleEndpoints(query);
   } catch (error) {
     console.error('getCampaigns 에러:', error);
-    // 오류 발생 시 빈 배열 대신 목업 데이터 반환
-    return getMockCampaigns();
+    throw error;
   }
 }
 
@@ -224,44 +199,27 @@ export async function getCampaignPerformanceReport(startDate: string, endDate: s
     console.log('API 호출 시작 - 캠페인 성과 보고서');
     logEnvironmentVars();
 
-    // 실제 환경에서는 API를 호출합니다.
-    if (USE_REAL_API) {
-      const endpoint = `/v${API_VERSION}/customers/${CUSTOMER_ID}/googleAds:search`;
-      console.log(`엔드포인트: ${endpoint}`);
+    const query = `
+      SELECT
+        campaign.id,
+        campaign.name,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.ctr
+      FROM campaign
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      ORDER BY metrics.cost_micros DESC
+    `;
 
-      const query = `
-        SELECT
-          campaign.id,
-          campaign.name,
-          metrics.impressions,
-          metrics.clicks,
-          metrics.cost_micros,
-          metrics.conversions,
-          metrics.ctr
-        FROM campaign
-        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-        ORDER BY metrics.cost_micros DESC
-      `;
+    console.log('API 쿼리:', query);
 
-      console.log('API 쿼리:', query);
-
-      // Axios를 통해 API 요청
-      try {
-        return await tryMultipleEndpoints(query, 'campaign_report', startDate, endDate);
-      } catch (error) {
-        console.error('API 호출 실패:', error);
-        console.log('목업 데이터로 대체합니다.');
-        return getMockCampaignReport();
-      }
-    }
-
-    // 개발 환경에서는 목업 데이터를 반환합니다.
-    console.log('목업 데이터 반환: getCampaignPerformanceReport');
-    return getMockCampaignReport();
+    // API 요청
+    return await tryMultipleEndpoints(query);
   } catch (error) {
     console.error('getCampaignPerformanceReport 에러:', error);
-    // 오류 발생 시 빈 배열 대신 목업 데이터 반환
-    return getMockCampaignReport();
+    throw error;
   }
 }
 
@@ -274,220 +232,322 @@ export async function getKeywordPerformanceReport(startDate: string, endDate: st
     console.log(`키워드 리포트 요청: ${startDate} ~ ${endDate}`);
     logEnvironmentVars();
 
-    // 실제 환경에서는 API를 호출합니다.
-    if (USE_REAL_API) {
-      const endpoint = `/v${API_VERSION}/customers/${CUSTOMER_ID}/googleAds:search`;
-      console.log(`엔드포인트: ${endpoint}`);
+    const query = `
+      SELECT
+        ad_group_criterion.keyword.text,
+        campaign.name,
+        ad_group.name,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.ctr
+      FROM keyword_view
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      ORDER BY metrics.impressions DESC
+    `;
 
-      const query = `
-        SELECT
-          ad_group_criterion.keyword.text,
-          campaign.name,
+    console.log('API 쿼리:', query);
+
+    // API 요청
+    return await tryMultipleEndpoints(query);
+  } catch (error) {
+    console.error('getKeywordPerformanceReport 에러:', error);
+    throw error;
+  }
+}
+
+/**
+ * 광고 그룹 목록 가져오기
+ * 
+ * 캠페인 ID를 기준으로 해당 캠페인의 광고 그룹 목록을 가져옵니다.
+ */
+export async function getAdGroups(campaignId?: string) {
+  try {
+    // 환경 변수 로그
+    console.log('getAdGroups() 호출됨', campaignId ? `캠페인 ID: ${campaignId}` : '전체 광고 그룹 요청');
+    logEnvironmentVars();
+    
+    let query = `
+      SELECT 
+        ad_group.id, 
+        ad_group.name,
+        campaign.id,
+        campaign.name
+      FROM ad_group
+      ORDER BY ad_group.name
+      LIMIT 50
+    `;
+    
+    // 캠페인 ID가 제공된 경우 해당 캠페인의 광고 그룹만 필터링
+    if (campaignId) {
+      query = `
+        SELECT 
+          ad_group.id, 
           ad_group.name,
+          campaign.id,
+          campaign.name
+        FROM ad_group
+        WHERE campaign.id = '${campaignId}'
+        ORDER BY ad_group.name
+        LIMIT 50
+      `;
+    }
+    
+    console.log('API 쿼리:', query);
+    
+    // API 요청
+    return await tryMultipleEndpoints(query);
+  } catch (error) {
+    console.error('getAdGroups 에러:', error);
+    throw error;
+  }
+}
+
+/**
+ * 광고 그룹 퍼포먼스 리포트 가져오기
+ * 
+ * 특정 기간 동안의 광고 그룹 성과 데이터를 가져옵니다.
+ * 선택적으로 특정 캠페인의 광고 그룹만 필터링할 수 있습니다.
+ */
+export async function getAdGroupPerformanceReport(startDate: string, endDate: string, campaignId?: string | null) {
+  try {
+    // 환경 변수 로그
+    console.log(`광고 그룹 리포트 요청: ${startDate} ~ ${endDate}${campaignId ? ', 캠페인 ID: ' + campaignId : ''}`);
+    logEnvironmentVars();
+
+    let query = `
+      SELECT
+        ad_group.id,
+        ad_group.name,
+        campaign.id,
+        campaign.name,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.ctr
+      FROM ad_group
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      ORDER BY metrics.cost_micros DESC
+    `;
+
+    // 캠페인 ID가 제공된 경우 해당 캠페인의 광고 그룹만 필터링
+    if (campaignId) {
+      query = `
+        SELECT
+          ad_group.id,
+          ad_group.name,
+          campaign.id,
+          campaign.name,
           metrics.impressions,
           metrics.clicks,
           metrics.cost_micros,
           metrics.conversions,
           metrics.ctr
-        FROM keyword_view
+        FROM ad_group
         WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-        ORDER BY metrics.impressions DESC
+          AND campaign.id = '${campaignId}'
+        ORDER BY metrics.cost_micros DESC
       `;
-
-      console.log('API 쿼리:', query);
-
-      // Axios를 통해 API 요청
-      try {
-        return await tryMultipleEndpoints(query, 'keyword_report', startDate, endDate);
-      } catch (error) {
-        console.error('API 호출 실패:', error);
-        console.log('목업 데이터로 대체합니다.');
-        return getMockKeywordReport();
-      }
     }
 
-    // 개발 환경에서는 목업 데이터를 반환합니다.
-    console.log('목업 데이터 반환: getKeywordPerformanceReport');
-    return getMockKeywordReport();
+    console.log('API 쿼리:', query);
+
+    // API 요청
+    try {
+      return await tryMultipleEndpoints(query);
+    } catch (error) {
+      console.error('API 호출 실패, Mock 데이터 반환:', error);
+      return getMockAdGroupPerformanceReport(campaignId);
+    }
   } catch (error) {
-    console.error('getKeywordPerformanceReport 에러:', error);
-    // 오류 발생 시 빈 배열 대신 목업 데이터 반환
-    return getMockKeywordReport();
+    console.error('getAdGroupPerformanceReport 에러:', error);
+    return getMockAdGroupPerformanceReport(campaignId);
   }
 }
 
-// 모의 데이터 함수 - API 연동 실패 시 대체 데이터로 사용
-function getMockCampaigns() {
-  return [
+/**
+ * 테스트용 Mock 광고 그룹 성과 데이터
+ */
+function getMockAdGroupPerformanceReport(campaignId?: string | null) {
+  const mockData = [
     {
-      campaign: { 
-        id: '12345678', 
-        name: '브랜드 인지도 캠페인', 
-        status: 'ENABLED'
-      },
-      campaign_budget: {
-        amount_micros: '50000000000'
+      ad_group: { id: '1001', name: '브랜드 키워드 그룹' },
+      campaign: { id: '101', name: '브랜드 캠페인' },
+      metrics: {
+        impressions: 12500,
+        clicks: 750,
+        cost_micros: 1500000000, // 1,500,000 KRW (micro-units)
+        conversions: 45,
+        ctr: 0.06
       }
     },
     {
-      campaign: { 
-        id: '23456789', 
-        name: '제품 프로모션 캠페인', 
-        status: 'ENABLED'
-      },
-      campaign_budget: {
-        amount_micros: '35000000000'
+      ad_group: { id: '1002', name: '제품 키워드 그룹' },
+      campaign: { id: '101', name: '브랜드 캠페인' },
+      metrics: {
+        impressions: 8700,
+        clicks: 520,
+        cost_micros: 980000000, // 980,000 KRW
+        conversions: 30,
+        ctr: 0.059
       }
     },
     {
-      campaign: { 
-        id: '34567890', 
-        name: '리마케팅 캠페인', 
-        status: 'PAUSED'
-      },
-      campaign_budget: {
-        amount_micros: '25000000000'
+      ad_group: { id: '2001', name: '경쟁사 키워드 그룹' },
+      campaign: { id: '102', name: '경쟁사 타겟팅 캠페인' },
+      metrics: {
+        impressions: 5600,
+        clicks: 280,
+        cost_micros: 750000000, // 750,000 KRW
+        conversions: 15,
+        ctr: 0.05
       }
     },
     {
-      campaign: { 
-        id: '45678901', 
-        name: '계절 할인 캠페인', 
-        status: 'ENABLED'
-      },
-      campaign_budget: {
-        amount_micros: '40000000000'
-      }
-    },
-    {
-      campaign: { 
-        id: '56789012', 
-        name: '신제품 출시 캠페인', 
-        status: 'ENABLED'
-      },
-      campaign_budget: {
-        amount_micros: '45000000000'
+      ad_group: { id: '3001', name: '일반 검색 그룹' },
+      campaign: { id: '103', name: '일반 검색 캠페인' },
+      metrics: {
+        impressions: 18900,
+        clicks: 850,
+        cost_micros: 2100000000, // 2,100,000 KRW
+        conversions: 55,
+        ctr: 0.045
       }
     }
   ];
+
+  // 캠페인 ID로 필터링
+  if (campaignId) {
+    return mockData.filter(item => item.campaign.id === campaignId);
+  }
+
+  return mockData;
 }
 
-function getMockCampaignReport(): any[] {
-  return [
-    {
-      campaign: { id: '123456789', name: '브랜드 인지도 캠페인' },
-      metrics: {
-        impressions: '15000',
-        clicks: '450',
-        cost_micros: '12500000', // 12.5 원
-        conversions: '25',
-        ctr: '0.03'
-      }
-    },
-    {
-      campaign: { id: '987654321', name: '제품 프로모션 캠페인' },
-      metrics: {
-        impressions: '8500',
-        clicks: '320',
-        cost_micros: '9800000', // 9.8 원
-        conversions: '18',
-        ctr: '0.0376'
-      }
-    },
-    {
-      campaign: { id: '456789123', name: '리마케팅 캠페인' },
-      metrics: {
-        impressions: '5200',
-        clicks: '210',
-        cost_micros: '7500000', // 7.5 원
-        conversions: '15',
-        ctr: '0.0403'
-      }
-    },
-    {
-      campaign: { id: '654321987', name: '검색 광고 캠페인' },
-      metrics: {
-        impressions: '12000',
-        clicks: '380',
-        cost_micros: '15000000', // 15 원
-        conversions: '22',
-        ctr: '0.0316'
-      }
-    },
-    {
-      campaign: { id: '321987654', name: '신규 고객 확보 캠페인' },
-      metrics: {
-        impressions: '7800',
-        clicks: '290',
-        cost_micros: '8900000', // 8.9 원
-        conversions: '17',
-        ctr: '0.0372'
-      }
+/**
+ * 광고 그룹 ID로 키워드 목록 가져오기
+ * 
+ * 특정 광고 그룹에 속한 키워드 목록을 가져옵니다.
+ */
+export async function getKeywordsByAdGroup(adGroupId: string) {
+  try {
+    // 환경 변수 로그
+    console.log(`getKeywordsByAdGroup() 호출됨, 광고 그룹 ID: ${adGroupId}`);
+    logEnvironmentVars();
+    
+    const query = `
+      SELECT 
+        ad_group_criterion.keyword.text,
+        ad_group_criterion.criterion_id,
+        ad_group.id,
+        ad_group.name,
+        campaign.id,
+        campaign.name
+      FROM keyword_view
+      WHERE ad_group.id = '${adGroupId}'
+      ORDER BY ad_group_criterion.keyword.text
+      LIMIT 100
+    `;
+    
+    console.log('API 쿼리:', query);
+    
+    // API 요청
+    try {
+      return await tryMultipleEndpoints(query);
+    } catch (error) {
+      console.error('API 호출 실패, Mock 데이터 반환:', error);
+      return getMockKeywordsByAdGroup(adGroupId);
     }
-  ];
+  } catch (error) {
+    console.error('getKeywordsByAdGroup 에러:', error);
+    return getMockKeywordsByAdGroup(adGroupId);
+  }
 }
 
-function getMockKeywordReport(): any[] {
+/**
+ * 테스트용 Mock 키워드 데이터
+ */
+function getMockKeywordsByAdGroup(adGroupId: string) {
+  // 광고 그룹별 Mock 키워드 데이터
+  const mockDataMap: {[key: string]: any[]} = {
+    '174144587179': [
+      {
+        ad_group_criterion: { criterion_id: '1001', keyword: { text: '건강맛선' } },
+        ad_group: { id: '174144587179', name: '건강맛선_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      },
+      {
+        ad_group_criterion: { criterion_id: '1002', keyword: { text: '농협 맛선' } },
+        ad_group: { id: '174144587179', name: '건강맛선_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      },
+      {
+        ad_group_criterion: { criterion_id: '1003', keyword: { text: '건강 간식' } },
+        ad_group: { id: '174144587179', name: '건강맛선_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      }
+    ],
+    '174144649879': [
+      {
+        ad_group_criterion: { criterion_id: '2001', keyword: { text: '맛선 브랜드' } },
+        ad_group: { id: '174144649879', name: '맛선_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      },
+      {
+        ad_group_criterion: { criterion_id: '2002', keyword: { text: '맛선 제품' } },
+        ad_group: { id: '174144649879', name: '맛선_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      }
+    ],
+    '174144711979': [
+      {
+        ad_group_criterion: { criterion_id: '3001', keyword: { text: '농협식품' } },
+        ad_group: { id: '174144711979', name: '농협식품_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      },
+      {
+        ad_group_criterion: { criterion_id: '3002', keyword: { text: '농협 식품' } },
+        ad_group: { id: '174144711979', name: '농협식품_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      },
+      {
+        ad_group_criterion: { criterion_id: '3003', keyword: { text: '농협 브랜드' } },
+        ad_group: { id: '174144711979', name: '농협식품_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      }
+    ],
+    '174144774279': [
+      {
+        ad_group_criterion: { criterion_id: '4001', keyword: { text: '천연 간식' } },
+        ad_group: { id: '174144774279', name: '식품_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      },
+      {
+        ad_group_criterion: { criterion_id: '4002', keyword: { text: '건강 식품' } },
+        ad_group: { id: '174144774279', name: '식품_브랜드K' },
+        campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' }
+      }
+    ]
+  };
+  
+  // 광고 그룹 ID에 해당하는 Mock 데이터가 있으면 반환, 없으면 기본 Mock 데이터 반환
+  if (mockDataMap[adGroupId]) {
+    return mockDataMap[adGroupId];
+  }
+  
+  // 기본 Mock 데이터 (특정 광고 그룹 ID가 매칭되지 않을 경우)
   return [
     {
-      ad_group_criterion: { keyword: { text: '디지털 마케팅' } },
-      campaign: { name: '디지털 마케팅 캠페인' },
-      ad_group: { name: '디지털 마케팅 그룹' },
-      metrics: {
-        impressions: '5000',
-        clicks: '250',
-        cost_micros: '5500000', // 5.5 원
-        conversions: '15',
-        ctr: '0.05'
-      }
+      ad_group_criterion: { criterion_id: '9001', keyword: { text: '기본 키워드 1' } },
+      ad_group: { id: adGroupId, name: '알 수 없는 광고 그룹' },
+      campaign: { id: '0', name: '알 수 없는 캠페인' }
     },
     {
-      ad_group_criterion: { keyword: { text: '온라인 광고' } },
-      campaign: { name: '디지털 마케팅 캠페인' },
-      ad_group: { name: '온라인 광고 그룹' },
-      metrics: {
-        impressions: '3500',
-        clicks: '180',
-        cost_micros: '4200000', // 4.2 원
-        conversions: '12',
-        ctr: '0.0514'
-      }
-    },
-    {
-      ad_group_criterion: { keyword: { text: 'SEO 최적화' } },
-      campaign: { name: '검색 마케팅 캠페인' },
-      ad_group: { name: 'SEO 그룹' },
-      metrics: {
-        impressions: '2800',
-        clicks: '140',
-        cost_micros: '3600000', // 3.6 원
-        conversions: '8',
-        ctr: '0.05'
-      }
-    },
-    {
-      ad_group_criterion: { keyword: { text: '소셜 미디어 마케팅' } },
-      campaign: { name: '소셜 미디어 캠페인' },
-      ad_group: { name: '소셜 미디어 그룹' },
-      metrics: {
-        impressions: '4200',
-        clicks: '210',
-        cost_micros: '4800000', // 4.8 원
-        conversions: '14',
-        ctr: '0.05'
-      }
-    },
-    {
-      ad_group_criterion: { keyword: { text: '이메일 마케팅' } },
-      campaign: { name: '이메일 캠페인' },
-      ad_group: { name: '이메일 마케팅 그룹' },
-      metrics: {
-        impressions: '3000',
-        clicks: '150',
-        cost_micros: '3800000', // 3.8 원
-        conversions: '10',
-        ctr: '0.05'
-      }
+      ad_group_criterion: { criterion_id: '9002', keyword: { text: '기본 키워드 2' } },
+      ad_group: { id: adGroupId, name: '알 수 없는 광고 그룹' },
+      campaign: { id: '0', name: '알 수 없는 캠페인' }
     }
   ];
 } 
