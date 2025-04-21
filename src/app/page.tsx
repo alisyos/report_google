@@ -39,6 +39,7 @@ export default function Home() {
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
   const [selectedAdGroup, setSelectedAdGroup] = useState<string>('');
   const [selectedKeyword, setSelectedKeyword] = useState<string>('');
+  const [selectedKeywordId, setSelectedKeywordId] = useState<string>('');
   const [adGroups, setAdGroups] = useState<AdGroup[]>([]);
   const [loadingAdGroups, setLoadingAdGroups] = useState<boolean>(false);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
@@ -69,7 +70,25 @@ export default function Home() {
         
         setCampaignData(filteredData);
       } else if (activeTab === 'keyword') {
-        const response = await fetchKeywordReport(dateRange);
+        // 키워드 리포트 데이터 가져오기
+        console.log(`키워드 리포트 요청 - 필터: 캠페인=${selectedCampaign || '없음'}, 광고그룹=${selectedAdGroup || '없음'}, 키워드=${selectedKeyword || '없음'}, 키워드ID=${selectedKeywordId || '없음'}`);
+        
+        // selectedKeywordId가 있으면 직접 사용
+        const keywordIdToUse = selectedKeywordId || undefined;
+        
+        if (keywordIdToUse) {
+          console.log(`키워드 ID로 필터링: ${keywordIdToUse}`);
+        } else {
+          console.log('키워드 ID가 없습니다. 필터가 제대로 적용되지 않을 수 있습니다.');
+        }
+        
+        const response = await fetchKeywordReport(
+          dateRange, 
+          keywordIdToUse, 
+          selectedAdGroup || undefined, 
+          selectedCampaign || undefined
+        );
+        
         if (response.error) {
           setError(response.error);
         } else {
@@ -366,6 +385,7 @@ export default function Home() {
     setSelectedCampaign('');
     setSelectedAdGroup('');
     setSelectedKeyword('');
+    setSelectedKeywordId('');
     setAdGroups([]);
     setKeywords([]);
   }, [activeTab]);
@@ -376,6 +396,7 @@ export default function Home() {
       setSelectedCampaign(value);
       setSelectedAdGroup(''); // 캠페인이 변경되면 광고 그룹 선택 초기화
       setSelectedKeyword(''); // 캠페인이 변경되면 키워드 선택 초기화
+      setSelectedKeywordId(''); // 캠페인이 변경되면 키워드 ID 초기화
       setKeywords([]); // 키워드 목록 초기화
       
       // 캠페인이 선택되었고 캠페인 탭이 활성화되어 있으면 일별 데이터 가져오기
@@ -401,6 +422,7 @@ export default function Home() {
     } else if (type === 'adGroup') {
       setSelectedAdGroup(value);
       setSelectedKeyword(''); // 광고 그룹이 변경되면 키워드 선택 초기화
+      setSelectedKeywordId(''); // 광고 그룹이 변경되면 키워드 ID 초기화
       
       // 광고 그룹이 선택되면 즉시 키워드 데이터 가져오기
       if (value) {
@@ -527,6 +549,27 @@ export default function Home() {
     return [...new Set(filteredKeywords.map(k => k.keyword))];
   };
 
+  // 키워드 선택 핸들러
+  const handleKeywordSelect = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const keywordValue = event.target.value;
+    setSelectedKeyword(keywordValue);
+    
+    console.log(`키워드 선택됨: ${keywordValue}`);
+    
+    // 선택된 키워드에 해당하는 ID 저장
+    if (keywordValue && keywords.length > 0) {
+      const selectedKeywordObj = keywords.find(k => k.keyword === keywordValue);
+      if (selectedKeywordObj) {
+        console.log(`선택된 키워드 ID: ${selectedKeywordObj.id}`);
+        setSelectedKeywordId(selectedKeywordObj.id);
+      } else {
+        setSelectedKeywordId('');
+      }
+    } else {
+      setSelectedKeywordId('');
+    }
+  };
+
   return (
     <main className="flex min-h-screen flex-col p-6 bg-gray-50">
       <div className="max-w-7xl mx-auto w-full">
@@ -576,7 +619,7 @@ export default function Home() {
             <select 
               className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedKeyword}
-              onChange={(e) => handleFilterChange('keyword', e.target.value)}
+              onChange={handleKeywordSelect}
               disabled={!selectedAdGroup || loadingKeywords}
             >
               <option value="">모든 키워드</option>
