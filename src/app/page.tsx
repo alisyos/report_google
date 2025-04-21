@@ -619,7 +619,7 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col p-6 bg-gray-50">
       <div className="max-w-7xl mx-auto w-full">
-        <h1 className="text-2xl font-bold mb-6">광고 리포트</h1>
+        <h1 className="text-2xl font-bold mb-6">구글 광고 리포트</h1>
         
         {/* 필터 섹션 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
