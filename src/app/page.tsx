@@ -5,9 +5,10 @@ import DatePicker from 'react-datepicker';
 import ReportTable from './components/ReportTable';
 import DailyReportTable from './components/DailyReportTable';
 import { Loading, Error } from './components/StatusIndicator';
-import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup, fetchAdGroupReport, fetchCampaignDailyReport } from '@/lib/api';
-import { CampaignReport, KeywordReport, DateRange, AdGroup, Keyword, CampaignDailyReport } from '@/types';
+import { fetchCampaignReport, fetchKeywordReport, fetchAdGroupsByCampaign, fetchKeywordsByAdGroup, fetchAdGroupReport, fetchCampaignDailyReport, fetchAdGroupDailyReport } from '@/lib/api';
+import { CampaignReport, KeywordReport, DateRange, AdGroup, Keyword, CampaignDailyReport, AdGroupDailyReport } from '@/types';
 import 'react-datepicker/dist/react-datepicker.css';
+import DateRangePicker from './components/DateRangePicker';
 
 export default function Home() {
   // 현재 날짜 기준 지난 30일 기본값 설정
@@ -157,6 +158,44 @@ export default function Home() {
     }
   };
 
+  // 광고 그룹 일별 리포트 데이터 가져오기
+  const fetchAdGroupDailyReportData = async (adGroupId: string) => {
+    if (!adGroupId) {
+      setShowDailyReport(false);
+      setDailyReportData([]);
+      return;
+    }
+
+    setLoadingDailyReport(true);
+    setError(null);
+
+    try {
+      // 광고 그룹의 캠페인 ID 가져오기
+      const adGroup = adGroups.find(g => g.id === adGroupId);
+      const campaignId = adGroup?.campaignId;
+      
+      console.log(`광고 그룹 일별 리포트 요청 - 광고 그룹 ID: ${adGroupId}, 캠페인 ID: ${campaignId || '알 수 없음'}`);
+      
+      const response = await fetchAdGroupDailyReport(dateRange, campaignId, adGroupId);
+      
+      if (response.error) {
+        console.error('광고 그룹 일별 리포트 가져오기 오류:', response.error);
+        setError(response.error);
+        setShowDailyReport(false);
+      } else {
+        console.log(`${response.data?.length || 0}개의 광고 그룹 일별 데이터 로드됨`);
+        setDailyReportData(response.data || []);
+        setShowDailyReport(true);
+      }
+    } catch (error) {
+      console.error('광고 그룹 일별 리포트 로딩 중 오류 발생:', error);
+      setError('광고 그룹 일별 리포트를 가져오는 중 오류가 발생했습니다.');
+      setShowDailyReport(false);
+    } finally {
+      setLoadingDailyReport(false);
+    }
+  };
+
   // 날짜 범위 변경 처리
   const handleDateChange = (key: 'startDate' | 'endDate', date: Date | null) => {
     if (date) {
@@ -255,6 +294,8 @@ export default function Home() {
     // 탭 변경 시 일별 리포트 상태 업데이트
     if (tabId === 'campaign' && selectedCampaign) {
       fetchDailyReportData(selectedCampaign);
+    } else if (tabId === 'adGroup' && selectedAdGroup) {
+      fetchAdGroupDailyReportData(selectedAdGroup);
     } else {
       setShowDailyReport(false);
       setDailyReportData([]);
@@ -364,8 +405,16 @@ export default function Home() {
       // 광고 그룹이 선택되면 즉시 키워드 데이터 가져오기
       if (value) {
         fetchKeywords(value);
+        
+        // 광고 그룹 탭이 활성화되어 있으면 일별 데이터도 가져오기
+        if (activeTab === 'adGroup') {
+          fetchAdGroupDailyReportData(value);
+        }
       } else {
         setKeywords([]); // 광고 그룹이 선택 해제되면 키워드 목록 초기화
+        // 광고 그룹이 선택 해제되면 일별 데이터 숨기기
+        setShowDailyReport(false);
+        setDailyReportData([]);
       }
       
       // 활성 탭이 광고 그룹인 경우 데이터 즉시 갱신
@@ -644,7 +693,7 @@ export default function Home() {
             <>
               <ReportTable data={currentData} title={reportTitle} />
               
-              {/* 일별 리포트 */}
+              {/* 일별 리포트 - 캠페인 탭 */}
               {showDailyReport && activeTab === 'campaign' && selectedCampaign && (
                 <div className="mt-8">
                   {loadingDailyReport ? (
@@ -653,6 +702,24 @@ export default function Home() {
                     <DailyReportTable 
                       data={dailyReportData} 
                       title="일별 캠페인 성과 리포트" 
+                    />
+                  ) : (
+                    <div className="bg-white p-4 rounded-lg shadow">
+                      <p className="text-gray-500">선택한 기간에 해당하는 일별 데이터가 없습니다.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* 일별 리포트 - 광고 그룹 탭 */}
+              {showDailyReport && activeTab === 'adGroup' && selectedAdGroup && (
+                <div className="mt-8">
+                  {loadingDailyReport ? (
+                    <Loading />
+                  ) : dailyReportData.length > 0 ? (
+                    <DailyReportTable 
+                      data={dailyReportData} 
+                      title="일별 광고 그룹 성과 리포트" 
                     />
                   ) : (
                     <div className="bg-white p-4 rounded-lg shadow">

@@ -21,6 +21,20 @@ export interface CampaignDailyReport {
   ctr: number;
 }
 
+// 일별 광고 그룹 리포트 데이터 타입
+export interface AdGroupDailyReport {
+  id: string;
+  name: string;
+  campaignId: string;
+  campaignName: string;
+  date: string;
+  impressions: number;
+  clicks: number;
+  cost: number;
+  conversions: number;
+  ctr: number;
+}
+
 // 키워드 리포트 데이터 타입
 export interface KeywordReport {
   keyword: string;
