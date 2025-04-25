@@ -27,6 +27,7 @@ interface AdGroup {
 interface Campaign {
   id: string;
   name: string;
+  status?: string;
 }
 
 export default function KeywordChatbotPage() {
@@ -39,6 +40,8 @@ export default function KeywordChatbotPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [filteredCampaigns, setFilteredCampaigns] = useState<Campaign[]>([]);
+  const [showOnlyEnabled, setShowOnlyEnabled] = useState<boolean>(false);
   const [selectedCampaign, setSelectedCampaign] = useState<string>('');
   const [adGroups, setAdGroups] = useState<AdGroup[]>([]);
   const [selectedAdGroup, setSelectedAdGroup] = useState<string>('');
@@ -62,19 +65,41 @@ export default function KeywordChatbotPage() {
         
         if (data.data && Array.isArray(data.data)) {
           setCampaigns(data.data);
+          setFilteredCampaigns(data.data);
         } else {
           console.warn('예상치 못한 캠페인 데이터 형식:', data);
           setCampaigns([]);
+          setFilteredCampaigns([]);
         }
       } catch (error) {
         console.error('캠페인 목록 가져오기 실패:', error);
         // 오류 발생 시 빈 배열 설정
         setCampaigns([]);
+        setFilteredCampaigns([]);
       }
     };
     
     fetchCampaigns();
   }, []);
+
+  // 활성화된 캠페인만 필터링
+  useEffect(() => {
+    if (showOnlyEnabled) {
+      const enabled = campaigns.filter(campaign => campaign.status === 'ENABLED');
+      setFilteredCampaigns(enabled);
+    } else {
+      setFilteredCampaigns(campaigns);
+    }
+  }, [campaigns, showOnlyEnabled]);
+
+  // 필터 토글 핸들러
+  const handleFilterToggle = () => {
+    setShowOnlyEnabled(!showOnlyEnabled);
+    // 필터 변경 시 선택된 캠페인 초기화
+    setSelectedCampaign('');
+    setSelectedAdGroup('');
+    setSelectedKeyword('');
+  };
   
   // 캠페인 선택 시 광고 그룹 목록 가져오기
   useEffect(() => {
@@ -200,7 +225,21 @@ export default function KeywordChatbotPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {/* 캠페인 선택 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">캠페인</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">캠페인</label>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="enabledOnly"
+                  checked={showOnlyEnabled}
+                  onChange={handleFilterToggle}
+                  className="mr-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                />
+                <label htmlFor="enabledOnly" className="text-xs text-gray-600">
+                  활성화된 캠페인만 보기
+                </label>
+              </div>
+            </div>
             <select 
               className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedCampaign}
@@ -211,9 +250,9 @@ export default function KeywordChatbotPage() {
               }}
             >
               <option value="">캠페인 선택</option>
-              {campaigns.map(campaign => (
+              {filteredCampaigns.map(campaign => (
                 <option key={campaign.id} value={campaign.id}>
-                  {campaign.name}
+                  {campaign.name} {campaign.status === 'ENABLED' ? '(활성)' : campaign.status === 'PAUSED' ? '(중지)' : campaign.status === 'REMOVED' ? '(삭제됨)' : ''}
                 </option>
               ))}
             </select>

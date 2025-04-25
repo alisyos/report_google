@@ -45,6 +45,65 @@ export default function Home() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [loadingKeywords, setLoadingKeywords] = useState<boolean>(false);
   const [allCampaigns, setAllCampaigns] = useState<CampaignReport[]>([]);
+  const [filteredCampaigns, setFilteredCampaigns] = useState<CampaignReport[]>([]);
+  const [showOnlyEnabled, setShowOnlyEnabled] = useState<boolean>(false);
+
+  // 페이지 로드 시 캠페인 목록 가져오기
+  useEffect(() => {
+    fetchCampaignList();
+  }, []);
+
+  // 활성화된 캠페인만 필터링
+  useEffect(() => {
+    if (showOnlyEnabled) {
+      const enabled = allCampaigns.filter(campaign => campaign.status === 'ENABLED');
+      setFilteredCampaigns(enabled);
+      
+      // 필터링된 데이터로 현재 표시되는 캠페인 데이터도 업데이트
+      if (activeTab === 'campaign') {
+        if (selectedCampaign) {
+          // 선택된 캠페인이 있고 활성화 상태인지 확인
+          const isSelectedCampaignEnabled = enabled.some(c => c.id === selectedCampaign);
+          if (!isSelectedCampaignEnabled) {
+            // 선택된 캠페인이 활성화 상태가 아닌 경우 선택 해제
+            setSelectedCampaign('');
+            setSelectedAdGroup('');
+            setSelectedKeyword('');
+            setSelectedKeywordId('');
+            setCampaignData(enabled);
+          } else {
+            // 선택된 캠페인이 활성화 상태인 경우 해당 캠페인만 표시
+            setCampaignData(enabled.filter(c => c.id === selectedCampaign));
+          }
+        } else {
+          // 선택된 캠페인이 없는 경우 모든 활성화 캠페인 표시
+          setCampaignData(enabled);
+        }
+      }
+    } else {
+      setFilteredCampaigns(allCampaigns);
+      
+      // 필터 해제 시 원래 데이터로 복원
+      if (activeTab === 'campaign') {
+        if (selectedCampaign) {
+          setCampaignData(allCampaigns.filter(c => c.id === selectedCampaign));
+        } else {
+          setCampaignData(allCampaigns);
+        }
+      }
+    }
+    
+    // 필터 변경 시 리포트 데이터를 자동으로 갱신하지 않음
+    // 사용자가 리포트 생성 버튼을 직접 클릭하도록 함
+    // if (campaignData.length > 0 || keywordData.length > 0 || adGroupReportData.length > 0) {
+    //   fetchReportData();
+    // }
+  }, [allCampaigns, showOnlyEnabled, activeTab, selectedCampaign]);
+
+  // 필터 토글 핸들러
+  const handleFilterToggle = () => {
+    setShowOnlyEnabled(!showOnlyEnabled);
+  };
 
   // 리포트 데이터 가져오기
   const fetchReportData = async () => {
@@ -53,22 +112,37 @@ export default function Home() {
 
     try {
       if (activeTab === 'campaign') {
-        // 캠페인 탭일 때는 이미 데이터가 있으므로 필터링만 적용
-        let filteredData = [...allCampaigns];
+        // 캠페인 탭일 때 리포트 데이터 가져오기
+        console.log(`캠페인 리포트 요청 - 기간: ${dateRange.startDate} ~ ${dateRange.endDate}`);
         
-        // 캠페인 필터 적용
-        if (selectedCampaign) {
-          filteredData = filteredData.filter(item => item.id === selectedCampaign);
-          
-          // 선택된 캠페인이 있으면 일별 데이터도 가져오기
-          await fetchDailyReportData(selectedCampaign);
+        const response = await fetchCampaignReport(dateRange);
+        
+        if (response.error) {
+          setError(response.error);
         } else {
-          // 캠페인이 선택되지 않았으면 일별 데이터 숨기기
-          setShowDailyReport(false);
-          setDailyReportData([]);
+          // API 응답에서 데이터 추출
+          let campaignReportData = response.data || [];
+          
+          // 활성화된 캠페인만 보기 필터 적용
+          if (showOnlyEnabled) {
+            campaignReportData = campaignReportData.filter(campaign => campaign.status === 'ENABLED');
+          }
+          
+          // 캠페인 필터 적용
+          if (selectedCampaign) {
+            campaignReportData = campaignReportData.filter(item => item.id === selectedCampaign);
+            
+            // 선택된 캠페인이 있으면 일별 데이터도 가져오기
+            await fetchDailyReportData(selectedCampaign);
+          } else {
+            // 캠페인이 선택되지 않았으면 일별 데이터 숨기기
+            setShowDailyReport(false);
+            setDailyReportData([]);
+          }
+          
+          // 결과 저장
+          setCampaignData(campaignReportData);
         }
-        
-        setCampaignData(filteredData);
       } else if (activeTab === 'keyword') {
         // 키워드 리포트 데이터 가져오기
         console.log(`키워드 리포트 요청 - 필터: 캠페인=${selectedCampaign || '없음'}, 광고그룹=${selectedAdGroup || '없음'}, 키워드=${selectedKeyword || '없음'}, 키워드ID=${selectedKeywordId || '없음'}`);
@@ -82,11 +156,23 @@ export default function Home() {
           console.log('키워드 ID가 없습니다. 필터가 제대로 적용되지 않을 수 있습니다.');
         }
         
+        // 활성화된 캠페인만 보기 필터가 켜져 있으면 활성화된 캠페인 ID만 사용
+        let campaignIdToUse = selectedCampaign || undefined;
+        if (showOnlyEnabled && !selectedCampaign) {
+          // 선택된 캠페인이 없고 필터가 켜져 있으면 활성화된 캠페인 ID 목록 생성
+          const enabledCampaignIds = filteredCampaigns.map(c => c.id);
+          if (enabledCampaignIds.length > 0) {
+            // 활성화된 캠페인이 있으면 첫 번째 ID 사용 (API에서 IN 연산자를 지원하지 않는 경우 대비)
+            campaignIdToUse = enabledCampaignIds[0];
+            console.log(`활성화된 캠페인 필터 적용: ${enabledCampaignIds.length}개 캠페인, 첫 번째 ID ${campaignIdToUse} 사용`);
+          }
+        }
+        
         const response = await fetchKeywordReport(
           dateRange, 
           keywordIdToUse, 
           selectedAdGroup || undefined, 
-          selectedCampaign || undefined
+          campaignIdToUse
         );
         
         if (response.error) {
@@ -96,22 +182,30 @@ export default function Home() {
           
           // 캠페인 필터 적용
           if (selectedCampaign) {
-            const campaign = allCampaigns.find(c => c.id === selectedCampaign);
+            const campaign = filteredCampaigns.find(c => c.id === selectedCampaign);
             if (campaign) {
               filteredData = filteredData.filter(item => item.campaignName === campaign.name);
             }
+          } 
+          // 활성화된 캠페인만 보기 필터 적용 (선택된 캠페인이 없을 때)
+          else if (showOnlyEnabled) {
+            const enabledCampaignNames = filteredCampaigns.map(c => c.name);
+            if (enabledCampaignNames.length > 0) {
+              filteredData = filteredData.filter(item => enabledCampaignNames.includes(item.campaignName));
+              console.log(`키워드 데이터에 활성화된 캠페인 필터 적용: ${filteredData.length}개 항목 남음`);
+            }
+          }
+          
+          // 광고 그룹 필터 적용
+          if (selectedAdGroup) {
+            const adGroup = adGroups.find(g => g.id === selectedAdGroup);
+            if (adGroup) {
+              filteredData = filteredData.filter(item => item.adGroupName === adGroup.name);
+            }
             
-            // 광고 그룹 필터 적용
-            if (selectedAdGroup) {
-              const adGroup = adGroups.find(g => g.id === selectedAdGroup);
-              if (adGroup) {
-                filteredData = filteredData.filter(item => item.adGroupName === adGroup.name);
-              }
-              
-              // 키워드 필터 적용
-              if (selectedKeyword) {
-                filteredData = filteredData.filter(item => item.keyword === selectedKeyword);
-              }
+            // 키워드 필터 적용
+            if (selectedKeyword) {
+              filteredData = filteredData.filter(item => item.keyword === selectedKeyword);
             }
           }
           
@@ -119,15 +213,38 @@ export default function Home() {
         }
       } else if (activeTab === 'adGroup') {
         // 광고 그룹 리포트 데이터 가져오기
+        
+        // 활성화된 캠페인만 보기 필터가 켜져 있으면 활성화된 캠페인 ID만 사용
+        let campaignIdToUse = selectedCampaign || undefined;
+        if (showOnlyEnabled && !selectedCampaign) {
+          // 선택된 캠페인이 없고 필터가 켜져 있으면 활성화된 캠페인 ID 목록 생성
+          const enabledCampaignIds = filteredCampaigns.map(c => c.id);
+          if (enabledCampaignIds.length > 0) {
+            // 활성화된 캠페인이 있으면 첫 번째 ID 사용 (API에서 IN 연산자를 지원하지 않는 경우 대비)
+            campaignIdToUse = enabledCampaignIds[0];
+            console.log(`광고 그룹 조회에 활성화된 캠페인 필터 적용: ${enabledCampaignIds.length}개 캠페인, 첫 번째 ID ${campaignIdToUse} 사용`);
+          }
+        }
+        
         const response = await fetchAdGroupReport(
           dateRange,
-          selectedCampaign || undefined
+          campaignIdToUse
         );
         
         if (response.error) {
           setError(response.error);
         } else {
           let adGroupData = response.data || [];
+          
+          // 활성화된 캠페인만 보기 필터 적용 (선택된 캠페인이 없을 때)
+          if (showOnlyEnabled && !selectedCampaign) {
+            // API에서 캠페인 ID로 필터링을 제공하지 않는 경우, 프론트엔드에서 필터링
+            const enabledCampaignIds = filteredCampaigns.map(c => c.id);
+            if (enabledCampaignIds.length > 0) {
+              adGroupData = adGroupData.filter(item => enabledCampaignIds.includes(item.campaignId));
+              console.log(`광고 그룹 데이터에 활성화된 캠페인 필터 적용: ${adGroupData.length}개 항목 남음`);
+            }
+          }
           
           // 선택된 광고 그룹이 있으면 해당 그룹으로 필터링
           if (selectedAdGroup) {
@@ -389,25 +506,34 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await fetchCampaignReport(dateRange);
-      if (response.error) {
-        setError(response.error);
+      // 캠페인 데이터를 /api/campaigns 엔드포인트에서 직접 가져오기 (리포트가 아님)
+      const response = await fetch('/api/campaigns');
+      const data = await response.json() as { data?: CampaignReport[] };
+      
+      if (!response.ok) {
+        throw new Error((data as any).error || '캠페인 목록을 가져오는 중 오류가 발생했습니다.');
+      }
+      
+      if (data.data && Array.isArray(data.data)) {
+        setAllCampaigns(data.data);
+        setFilteredCampaigns(data.data);
+        setCampaignData(data.data);
       } else {
-        const campaigns = response.data || [];
-        setAllCampaigns(campaigns); // 모든 캠페인 목록 저장
-        setCampaignData(campaigns); // 필터링 적용 가능한 데이터 복사본
+        console.warn('예상치 못한 캠페인 데이터 형식:', data);
+        setAllCampaigns([]);
+        setFilteredCampaigns([]);
+        setCampaignData([]);
       }
     } catch (err: any) {
+      console.error('캠페인 목록 가져오기 실패:', err);
       setError(err.message || '캠페인 목록을 가져오는 중 오류가 발생했습니다.');
+      setAllCampaigns([]);
+      setFilteredCampaigns([]);
+      setCampaignData([]);
     } finally {
       setLoading(false);
     }
   };
-
-  // 페이지 로드 시 캠페인 목록만 가져오기
-  useEffect(() => {
-    fetchCampaignList();
-  }, []); // 페이지 로드 시 1회만 실행
 
   // 날짜 범위 변경 시 데이터를 자동으로 가져오지 않음
   useEffect(() => {
@@ -498,10 +624,10 @@ export default function Home() {
       // 캠페인 필터링은 더이상 실제 데이터를 변경하지 않음
       // 리포트 테이블에 표시될 내용만 필터링되도록 수정
       if (selectedCampaign) {
-        const filteredData = allCampaigns.filter(item => item.id === selectedCampaign);
+        const filteredData = filteredCampaigns.filter(item => item.id === selectedCampaign);
         setCampaignData(filteredData);
       } else {
-        setCampaignData(allCampaigns);
+        setCampaignData(filteredCampaigns);
       }
     } else if (activeTab === 'keyword') {
       // 기존 코드 유지
@@ -624,16 +750,30 @@ export default function Home() {
         {/* 필터 섹션 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">캠페인</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">캠페인</label>
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="enabledOnly"
+                  checked={showOnlyEnabled}
+                  onChange={handleFilterToggle}
+                  className="mr-1 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                />
+                <label htmlFor="enabledOnly" className="text-xs text-gray-600">
+                  활성화된 캠페인만 보기
+                </label>
+              </div>
+            </div>
             <select 
               className="w-full border border-gray-300 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedCampaign}
               onChange={(e) => handleFilterChange('campaign', e.target.value)}
             >
               <option value="">모든 캠페인</option>
-              {allCampaigns.map(campaign => (
+              {filteredCampaigns.map(campaign => (
                 <option key={campaign.id} value={campaign.id}>
-                  {campaign.name}
+                  {campaign.name} {campaign.status === 'ENABLED' ? '(활성)' : campaign.status === 'PAUSED' ? '(중지)' : campaign.status === 'REMOVED' ? '(삭제됨)' : ''}
                 </option>
               ))}
             </select>
@@ -682,51 +822,54 @@ export default function Home() {
           </div>
         </div>
         
-        {/* 날짜 선택 섹션 */}
-        <div className="bg-white p-4 rounded-lg shadow mb-6">
-          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">시작일</label>
-              <DatePicker
-                selected={startDate}
-                onChange={(date) => handleDateChange('startDate', date)}
-                className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                dateFormat="yyyy-MM-dd"
-              />
+        {/* 날짜 선택과 필터 섹션 */}
+        <div className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex gap-2 items-center">
+            {/* 기존 DatePicker 컴포넌트 유지 */}
+            <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">시작일</label>
+                <DatePicker
+                  selected={startDate}
+                  onChange={(date) => handleDateChange('startDate', date)}
+                  className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  dateFormat="yyyy-MM-dd"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">종료일</label>
+                <DatePicker
+                  selected={endDate}
+                  onChange={(date) => handleDateChange('endDate', date)}
+                  className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  dateFormat="yyyy-MM-dd"
+                  minDate={startDate || undefined}
+                />
+              </div>
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">종료일</label>
-              <DatePicker
-                selected={endDate}
-                onChange={(date) => handleDateChange('endDate', date)}
-                className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                dateFormat="yyyy-MM-dd"
-                minDate={startDate || undefined}
-              />
+            {/* 빠른 날짜 선택 버튼 */}
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleQuickDateRange(7)}
+                className="px-2 py-1 text-xs bg-gray-200 rounded hover:bg-gray-300"
+              >
+                7일
+              </button>
+              <button
+                onClick={() => handleQuickDateRange(30)}
+                className="px-2 py-1 text-xs bg-gray-200 rounded hover:bg-gray-300"
+              >
+                30일
+              </button>
+              <button
+                onClick={() => handleQuickDateRange(90)}
+                className="px-2 py-1 text-xs bg-gray-200 rounded hover:bg-gray-300"
+              >
+                90일
+              </button>
             </div>
-          </div>
-          
-          {/* 빠른 날짜 선택 버튼들 */}
-          <div className="flex flex-wrap gap-2">
-            <button 
-              onClick={() => handleQuickDateRange(7)}
-              className="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-sm text-gray-700"
-            >
-              최근 7일
-            </button>
-            <button 
-              onClick={() => handleQuickDateRange(30)}
-              className="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-sm text-gray-700"
-            >
-              최근 30일
-            </button>
-            <button 
-              onClick={() => handleQuickDateRange(90)}
-              className="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-md text-sm text-gray-700"
-            >
-              최근 90일
-            </button>
           </div>
         </div>
         
@@ -768,8 +911,9 @@ export default function Home() {
         <button
           onClick={fetchReportData}
           className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-md mb-6 transition-colors"
+          disabled={loading}
         >
-          리포트 생성
+          {loading ? '로딩 중...' : '리포트 생성'}
         </button>
         
         {/* 리포트 내용 */}

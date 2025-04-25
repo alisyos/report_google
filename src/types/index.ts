@@ -2,6 +2,7 @@
 export interface CampaignReport {
   id: string;
   name: string;
+  status?: string;
   impressions: number;
   clicks: number;
   cost: number;

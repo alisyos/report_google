@@ -78,12 +78,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '노출 수',
         accessorKey: 'impressions',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '클릭 수',
         accessorKey: 'clicks',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '비용',
@@ -109,12 +115,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '전환 수',
         accessorKey: 'conversions',
-        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        },
       },
       {
         header: 'CTR',
         accessorKey: 'ctr',
-        cell: (value) => `${(value * 100).toFixed(2)}%`,
+        cell: (value) => {
+          if (value === undefined || value === null) return '0%';
+          return `${(value * 100).toFixed(2)}%`;
+        },
       },
     ];
   } else if (isKeywordReport) {
@@ -125,12 +137,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '노출 수',
         accessorKey: 'impressions',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '클릭 수',
         accessorKey: 'clicks',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '비용',
@@ -156,12 +174,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '전환 수',
         accessorKey: 'conversions',
-        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        },
       },
       {
         header: 'CTR',
         accessorKey: 'ctr',
-        cell: (value) => `${(value * 100).toFixed(2)}%`,
+        cell: (value) => {
+          if (value === undefined || value === null) return '0%';
+          return `${(value * 100).toFixed(2)}%`;
+        },
       },
     ];
   } else if (isAdGroupReport) {
@@ -171,12 +195,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '노출 수',
         accessorKey: 'impressions',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '클릭 수',
         accessorKey: 'clicks',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '비용',
@@ -202,12 +232,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '전환 수',
         accessorKey: 'conversions',
-        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        },
       },
       {
         header: 'CTR',
         accessorKey: 'ctr',
-        cell: (value) => `${(value * 100).toFixed(2)}%`,
+        cell: (value) => {
+          if (value === undefined || value === null) return '0%';
+          return `${(value * 100).toFixed(2)}%`;
+        },
       },
     ];
   } else {
@@ -218,12 +254,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '노출 수',
         accessorKey: 'impressions',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '클릭 수',
         accessorKey: 'clicks',
-        cell: (value) => value.toLocaleString(),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString();
+        },
       },
       {
         header: '비용',
@@ -241,12 +283,18 @@ export default function ReportTable({ data, title }: ReportTableProps) {
       {
         header: '전환 수',
         accessorKey: 'conversions',
-        cell: (value) => value.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        cell: (value) => {
+          if (value === undefined || value === null) return '0';
+          return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        },
       },
       {
         header: 'CTR',
         accessorKey: 'ctr',
-        cell: (value) => `${(value * 100).toFixed(2)}%`,
+        cell: (value) => {
+          if (value === undefined || value === null) return '0%';
+          return `${(value * 100).toFixed(2)}%`;
+        },
       },
     ];
   }
