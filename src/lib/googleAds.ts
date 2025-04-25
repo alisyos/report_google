@@ -1163,4 +1163,101 @@ function getMockKeywordDailyPerformanceReport(
   
   console.log(`생성된 모의 데이터: ${reportData.length}개 항목`);
   return reportData;
+}
+
+/**
+ * 캠페인 상태 업데이트
+ * 
+ * 구글 광고 API를 통해 캠페인의 상태를 업데이트합니다.
+ * @param campaignId 업데이트할 캠페인 ID
+ * @param newStatus 새로운 상태 ('ENABLED', 'PAUSED', 'REMOVED' 중 하나)
+ * @returns 업데이트 성공 여부
+ */
+export async function updateCampaignStatus(campaignId: string, newStatus: string): Promise<{ success: boolean; message: string }> {
+  try {
+    // 환경 변수 로그
+    console.log(`updateCampaignStatus() 호출됨 - 캠페인 ID: ${campaignId}, 새 상태: ${newStatus}`);
+    logEnvironmentVars();
+    
+    // 상태값 유효성 검사
+    const validStatuses = ['ENABLED', 'PAUSED', 'REMOVED'];
+    if (!validStatuses.includes(newStatus)) {
+      return {
+        success: false,
+        message: `유효하지 않은 상태입니다. 허용된 값: ${validStatuses.join(', ')}`
+      };
+    }
+    
+    // 액세스 토큰 가져오기
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return {
+        success: false,
+        message: '액세스 토큰을 가져올 수 없습니다.'
+      };
+    }
+    
+    // 구글 광고 API 고객 ID 가져오기
+    const customerId = process.env.GOOGLE_ADS_CLIENT_CUSTOMER_ID;
+    if (!customerId) {
+      return {
+        success: false,
+        message: '구글 광고 API 고객 ID가 설정되지 않았습니다.'
+      };
+    }
+    
+    // API 요청 URL 및 본문 구성
+    const apiVersion = '15'; // 또는 현재 사용 중인 Google Ads API 버전
+    const endpoint = `https://googleads.googleapis.com/v${apiVersion}/customers/${customerId}/campaigns/${campaignId}:mutate`;
+    
+    const requestBody = {
+      updateMask: "status",
+      campaign: {
+        resourceName: `customers/${customerId}/campaigns/${campaignId}`,
+        status: newStatus
+      }
+    };
+    
+    console.log('API 요청 URL:', endpoint);
+    console.log('API 요청 본문:', JSON.stringify(requestBody, null, 2));
+    
+    // 테스트를 위한 모의 응답 - 실제 API 호출 구현 시 아래 코드로 대체
+    /* 
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('API 오류 응답:', errorData);
+      return {
+        success: false, 
+        message: `API 오류: ${errorData.error?.message || response.statusText}`
+      };
+    }
+    
+    const responseData = await response.json();
+    console.log('API 응답:', responseData);
+    */
+    
+    // 테스트용 모의 응답
+    console.log('테스트 모드: 실제 API 호출을 시뮬레이션합니다.');
+    
+    return {
+      success: true,
+      message: `캠페인 ID ${campaignId}의 상태가 ${newStatus}로 업데이트되었습니다.`
+    };
+  } catch (error: any) {
+    console.error('updateCampaignStatus 에러:', error);
+    return {
+      success: false,
+      message: `오류 발생: ${error.message || '알 수 없는 오류'}`
+    };
+  }
 } 

@@ -349,4 +349,33 @@ export async function fetchKeywordDailyReport(dateRange: DateRange, keywordId: s
     console.error('키워드 일별 보고서 가져오기 오류:', error);
     return [];
   }
+}
+
+/**
+ * 캠페인 상태 업데이트 API 요청
+ * @param campaignId 업데이트할 캠페인 ID
+ * @param newStatus 새 상태 ('ENABLED', 'PAUSED', 'REMOVED' 중 하나)
+ * @returns API 응답
+ */
+export async function updateCampaignStatus(campaignId: string, newStatus: string): Promise<ApiResponse<any>> {
+  try {
+    console.log(`캠페인 상태 업데이트 요청 - 캠페인 ID: ${campaignId}, 새 상태: ${newStatus}`);
+    
+    const response = await axios.put(`${API_URL}/api/campaigns/${campaignId}/status`, {
+      status: newStatus
+    });
+    
+    console.log('캠페인 상태 업데이트 응답:', response.data);
+    
+    if (response.data?.data) {
+      return { data: [response.data.data] };
+    }
+    
+    return { data: [] };
+  } catch (error: any) {
+    console.error('캠페인 상태 업데이트 오류:', error);
+    return {
+      error: error.response?.data?.message || '캠페인 상태를 업데이트하는 중 오류가 발생했습니다.'
+    };
+  }
 } 
