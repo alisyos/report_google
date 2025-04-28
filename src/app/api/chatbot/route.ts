@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { getKeywordDetails } from '@/lib/googleAds';
+import { getKeywordDetails, updateKeywordStatus } from '@/lib/googleAds';
+import { updateKeywordStatus as updateKeywordStatusApi } from '@/lib/api';
 
 interface KeywordInfo {
   id: string;
@@ -9,6 +10,18 @@ interface KeywordInfo {
   adGroupName: string;
   campaignId: string;
   campaignName: string;
+}
+
+interface ChatResponse {
+  response: string;
+  actions?: {
+    type: string;
+    status?: string;
+    bidAmount?: number;
+    matchType?: string;
+    success?: boolean;
+    message?: string;
+  }[];
 }
 
 export async function POST(request: NextRequest) {
@@ -33,7 +46,7 @@ export async function POST(request: NextRequest) {
       // 목(mock) 응답
       const mockResponse = generateMockResponse(message, keywordInfo);
       console.log('목(mock) 응답:', mockResponse);
-      return NextResponse.json({ response: mockResponse });
+      return NextResponse.json(mockResponse);
     }
     
     // 키워드 ID가 있는 경우 실제 키워드 상세 정보 가져오기
@@ -65,6 +78,7 @@ export async function POST(request: NextRequest) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: message }
       ],
+      response_format: { type: "json_object" },
       temperature: 0.7,
       max_tokens: 1000,
     });
@@ -74,26 +88,126 @@ export async function POST(request: NextRequest) {
       usage: response.usage,
     });
     
-    const assistantResponse = response.choices[0].message.content || '응답을 생성할 수 없습니다';
+    const assistantResponseRaw = response.choices[0].message.content || '{"response": "응답을 생성할 수 없습니다"}';
     
-    console.log('========== 챗봇 API 요청 완료 ==========');
-    return NextResponse.json({ response: assistantResponse });
+    try {
+      // JSON 파싱
+      const parsedResponse = JSON.parse(assistantResponseRaw) as ChatResponse;
+      
+      // 작업 실행
+      if (parsedResponse.actions && parsedResponse.actions.length > 0) {
+        for (const action of parsedResponse.actions) {
+          await executeAction(action, keywordInfo);
+        }
+      }
+      
+      console.log('========== 챗봇 API 요청 완료 ==========');
+      return NextResponse.json(parsedResponse);
+    } catch (parseError) {
+      console.error('응답 파싱 오류:', parseError);
+      return NextResponse.json({ 
+        response: '응답 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+        error: 'JSON 파싱 오류'
+      });
+    }
     
   } catch (error) {
     console.error('챗봇 API 요청 처리 중 오류 발생:', error);
-    return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 });
+    return NextResponse.json({ 
+      response: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      error: '서버 오류'
+    }, { status: 500 });
+  }
+}
+
+// 작업 실행 함수
+async function executeAction(action: any, keywordInfo: KeywordInfo) {
+  if (!keywordInfo || !keywordInfo.id || !keywordInfo.adGroupId) {
+    console.log('작업 실행을 위한 키워드 정보가 불충분함');
+    return;
+  }
+  
+  console.log(`작업 실행: ${action.type}`, action);
+  
+  try {
+    switch (action.type) {
+      case 'updateStatus':
+        if (action.status) {
+          // Google Ads API로 상태 업데이트
+          const result = await updateKeywordStatus(keywordInfo.id, keywordInfo.adGroupId, action.status);
+          console.log('상태 업데이트 결과:', result);
+          
+          // 백엔드 API로도 상태 업데이트 (중복 호출이지만 안전을 위해)
+          const apiResult = await updateKeywordStatusApi(keywordInfo.id, keywordInfo.adGroupId, action.status);
+          console.log('API 상태 업데이트 결과:', apiResult);
+          
+          action.success = result.success;
+          action.message = result.message;
+        }
+        break;
+        
+      // 나중에 추가될 수 있는 다른 작업 유형들
+      // case 'updateBid':
+      //   // 입찰가 업데이트 로직 구현
+      //   break;
+        
+      // case 'updateMatchType':
+      //   // 매칭 타입 업데이트 로직 구현
+      //   break;
+        
+      default:
+        console.log(`지원되지 않는 작업 유형: ${action.type}`);
+    }
+  } catch (error) {
+    console.error(`작업 실행 중 오류 (${action.type}):`, error);
+    action.success = false;
+    action.message = '작업 실행 중 오류가 발생했습니다';
   }
 }
 
 // 시스템 프롬프트 생성 함수
 function generateSystemPrompt(keywordInfo: KeywordInfo | undefined, keywordDetails: any = null, keywordDetailsRaw: string | null = null): string {
   if (!keywordInfo) {
-    return `당신은 광고 키워드 관리를 도와주는 챗봇입니다. 주어진 정보를 기반으로 사용자의 질문에 친절하고 전문적으로 답변해 주세요.`;
+    return `당신은 광고 키워드 설정을 관리하는 실행형 챗봇입니다. 사용자의 요청에 따라 키워드 설정을 변경하고 결과를 알려주세요.
+응답은 반드시 유효한 JSON 형식으로 제공해야 합니다.
+response 필드에는 사용자를 위한 메시지를 작성하고, actions 필드에는 수행할 작업을 포함하세요.
+
+예시 응답:
+{
+  "response": "키워드 상태를 활성화하였습니다.",
+  "actions": [
+    {
+      "type": "updateStatus",
+      "status": "ENABLED"
+    }
+  ]
+}
+
+현재는 다음 작업만 지원됩니다:
+- 상태 변경(updateStatus): status 필드에 "ENABLED", "PAUSED", "REMOVED" 중 하나를 지정
+
+사용자가 키워드를 선택하지 않았으므로, 먼저 분석할 키워드를 선택하도록 안내하세요.`;
   }
   
   // 기본 정보
-  let promptContent = `당신은 광고 키워드 관리를 도와주는 챗봇입니다. 사용자의 질문에 친절하고 전문적으로 답변해 주세요.
-  
+  let promptContent = `당신은 광고 키워드 설정을 관리하는 실행형 챗봇입니다. 사용자의 자연어 요청을 해석하여 키워드 설정을 변경하고 상태를 바꾸는 기능을 수행합니다.
+응답은 반드시 유효한 JSON 형식으로 제공해야 합니다.
+response 필드에는 사용자를 위한 메시지를 작성하고, actions 필드에는 수행할 작업을 포함하세요.
+
+예시 응답:
+{
+  "response": "키워드 '${keywordInfo.keyword}'의 상태를 활성화하였습니다.",
+  "actions": [
+    {
+      "type": "updateStatus",
+      "status": "ENABLED"
+    }
+  ]
+}
+
+현재는 다음 작업만 지원됩니다:
+- 상태 변경(updateStatus): status 필드에 "ENABLED"(활성화), "PAUSED"(일시중지), "REMOVED"(삭제) 중 하나를 지정
+
 현재 선택된 키워드 정보:
 - 키워드: ${keywordInfo.keyword}
 - 광고 그룹: ${keywordInfo.adGroupName}
@@ -103,19 +217,25 @@ function generateSystemPrompt(keywordInfo: KeywordInfo | undefined, keywordDetai
   // API 통신 원본 데이터 추가
   if (keywordDetailsRaw) {
     promptContent += `
-아래는 Google Ads API에서 가져온 키워드 상세 정보 원본 데이터입니다:
+아래는 해당 키워드의 현재 설정 정보입니다:
 \`\`\`json
 ${keywordDetailsRaw}
 \`\`\`
 
-위 원본 데이터를 바탕으로 응답해주세요. 원본 데이터에는 다음과 같은 정보가 포함될 수 있습니다:
-- campaign: 캠페인 정보 (resourceName, name, id 등)
-- adGroup: 광고 그룹 정보 (resourceName, id, name 등)
-- metrics: 성과 지표 (clicks, conversions, costMicros, impressions 등)
-- adGroupCriterion: 키워드 설정 정보 (resourceName, status, qualityInfo, keyword 정보, criterionId, effectiveCpcBidMicros 등)
-- keywordView: 키워드 뷰 정보 (resourceName 등)
+위 데이터를 바탕으로 사용자의 요청을 처리하세요. 사용자가 키워드 상태 변경을 요청하면 적절한 액션을 포함하여 응답하세요.
 
-이 키워드의 성과 및 설정 데이터를 분석하여 아래와 같은 내용을 포함해 답변해주세요:
+중요! 응답 형식:
+{
+  "response": "사용자에게 보여줄 응답 메시지",
+  "actions": [
+    { 
+      "type": "updateStatus", 
+      "status": "ENABLED" 
+    }
+  ]
+}
+
+만약 사용자의 요청이 설정 변경이 아니라 단순한 질문이나 상태 확인인 경우, actions 필드를 빈 배열로 설정하세요.
 `;
   } else {
     // 원본 데이터가 없는 경우, 포맷된 정보 제공
@@ -123,7 +243,7 @@ ${keywordDetailsRaw}
       const criterion = keywordDetails.ad_group_criterion || {};
       const metrics = keywordDetails.metrics || {};
       
-      // 입찰가 (마이크로 단위를 원 단위로 변환)
+      // 입찰가
       const bidAmount = criterion.effective_cpc_bid_micros ? (criterion.effective_cpc_bid_micros / 1000000) : null;
       
       // 품질 점수
@@ -135,24 +255,9 @@ ${keywordDetailsRaw}
       // 매칭 타입
       const matchType = criterion.keyword?.match_type || null;
       
-      // 노출 수
-      const impressions = metrics.impressions || null;
-      
-      // 클릭 수
-      const clicks = metrics.clicks || null;
-      
-      // 클릭률 (CTR)
-      const ctr = metrics.ctr ? (metrics.ctr * 100) : null;
-      
-      // 평균 CPC (마이크로 단위를 원 단위로 변환)
-      const averageCpc = metrics.average_cpc ? (metrics.average_cpc / 1000) : null;
-      
-      // 전환 수
-      const conversions = metrics.conversions || null;
-      
       // 추가 정보 템플릿에 추가
       promptContent += `
-키워드 상세 설정 정보:`;
+현재 키워드의 설정 정보:`;
       
       if (matchType) promptContent += `
 - 매칭 타입: ${matchType}`;
@@ -166,79 +271,101 @@ ${keywordDetailsRaw}
       if (qualityScore) promptContent += `
 - 품질 점수: ${qualityScore}/10`;
       
-      if (impressions || clicks || ctr || averageCpc || conversions) {
-        promptContent += `
+      promptContent += `
 
-키워드 성과 정보:`;
-        
-        if (impressions) promptContent += `
-- 노출 수: ${impressions.toLocaleString()}회`;
-        
-        if (clicks) promptContent += `
-- 클릭 수: ${clicks.toLocaleString()}회`;
-        
-        if (ctr) promptContent += `
-- 클릭률(CTR): ${ctr.toFixed(2)}%`;
-        
-        if (averageCpc) promptContent += `
-- 평균 클릭 비용(CPC): ${averageCpc.toLocaleString()}원`;
-        
-        if (conversions) promptContent += `
-- 전환 수: ${conversions.toLocaleString()}회`;
-      }
+중요! 응답 형식:
+{
+  "response": "사용자에게 보여줄 응답 메시지",
+  "actions": [
+    { 
+      "type": "updateStatus", 
+      "status": "ENABLED" 
+    }
+  ]
+}
+
+만약 사용자의 요청이 설정 변경이 아니라 단순한 질문이나 상태 확인인 경우, actions 필드를 빈 배열로 설정하세요.
+
+사용자가 상태를 변경하려고 할 때 사용할 수 있는 상태값:
+- "ENABLED": 활성화
+- "PAUSED": 일시중지
+- "REMOVED": 삭제
+
+사용자가 상태 변경을 요청하면(예: "키워드를 비활성화해줘", "이 키워드 일시중지 해줘" 등) 적절한 actions 배열을 포함하여 응답하세요.
+`;
     }
   }
   
-  promptContent += `
-1. 키워드 성과 분석: 노출 수, 클릭 수, 전환 수 등을 분석
-2. 품질 점수 분석: 현재 품질 점수와 개선 방안
-3. 입찰가 전략: 현재 입찰가의 적정성과 조정 방안
-4. 키워드 매칭 타입: 현재 설정된 매칭 타입의 영향과 변경 여부 검토
-5. 최적화 제안: 성과를 높이기 위한 구체적인 조치 사항
-
-사용자의 질문에 따라 위 정보를 참고하여 전문적인 조언을 제공해주세요.
-`;
-
   return promptContent;
 }
 
 // 목(mock) 응답 생성 함수
-function generateMockResponse(message: string, keywordInfo: KeywordInfo | undefined): string {
+function generateMockResponse(message: string, keywordInfo: KeywordInfo | undefined): ChatResponse {
   if (!keywordInfo) {
-    return `죄송합니다만, 현재 특정 키워드가 선택되지 않았습니다. 분석을 위해 키워드를 먼저 선택해 주세요.`;
+    return {
+      response: `죄송합니다만, 현재 특정 키워드가 선택되지 않았습니다. 설정을 변경하려면 먼저 키워드를 선택해 주세요.`,
+      actions: []
+    };
   }
   
   const keyword = keywordInfo.keyword;
   
-  if (message.includes('성과') || message.includes('실적') || message.includes('결과')) {
-    return `'${keyword}' 키워드는 최근 30일 동안 약 5,200회 노출되었으며, 클릭률은 3.2%입니다. 평균 광고 순위는 2.5위이고, 평균 CPC는 850원입니다. 전환율은 약 2.1%로, 업계 평균인 1.8%보다 높습니다.`;
+  // 키워드 활성화/비활성화/일시중지 요청
+  if (message.includes('활성화') || message.includes('켜') || message.includes('시작')) {
+    return {
+      response: `'${keyword}' 키워드를 활성화했습니다.`,
+      actions: [
+        {
+          type: 'updateStatus',
+          status: 'ENABLED',
+          success: true,
+          message: '성공적으로 상태가 업데이트되었습니다.'
+        }
+      ]
+    };
   }
   
-  if (message.includes('개선') || message.includes('최적화') || message.includes('향상')) {
-    return `'${keyword}' 키워드의 성과를 개선하기 위해 다음을 제안합니다:
-1. 광고 문구에 '${keyword}'를 명시적으로 포함시켜 관련성을 높이세요.
-2. 현재 입찰가가 경쟁사보다 약간 낮으므로, 10-15% 인상을 고려해 보세요.
-3. 랜딩 페이지에 '${keyword}' 관련 콘텐츠를 더 추가하여 품질 점수를 향상시키세요.
-4. 부정 키워드 목록을 검토하여 불필요한 노출을 줄이세요.`;
+  if (message.includes('비활성화') || message.includes('끄기') || message.includes('중지') || message.includes('일시중지') || message.includes('중단')) {
+    return {
+      response: `'${keyword}' 키워드를 일시중지했습니다.`,
+      actions: [
+        {
+          type: 'updateStatus',
+          status: 'PAUSED',
+          success: true,
+          message: '성공적으로 상태가 업데이트되었습니다.'
+        }
+      ]
+    };
   }
   
-  if (message.includes('추천') || message.includes('제안') || message.includes('조언')) {
-    return `'${keyword}'와 함께 고려할 만한 추가 키워드로는 '${keyword} 가격', '${keyword} 리뷰', '최고의 ${keyword}', '${keyword} 할인' 등이 있습니다. 또한 경쟁이 적은 롱테일 키워드인 '${keyword} 사용법', '${keyword} 문제해결', '${keyword} vs 경쟁제품' 등을 추가하면 전환율을 높일 수 있습니다.`;
+  if (message.includes('삭제') || message.includes('제거')) {
+    return {
+      response: `'${keyword}' 키워드를 삭제했습니다.`,
+      actions: [
+        {
+          type: 'updateStatus',
+          status: 'REMOVED',
+          success: true,
+          message: '성공적으로 상태가 업데이트되었습니다.'
+        }
+      ]
+    };
   }
   
-  if (message.includes('경쟁사') || message.includes('경쟁력') || message.includes('비교')) {
-    return `'${keyword}' 키워드에서는 현재 3개의 주요 경쟁사가 광고를 집행 중입니다. 평균 입찰가는 950원 수준이며, 귀사의 광고는 품질 점수는 7/10으로 경쟁사 평균(6/10)보다 높습니다. 경쟁사들은 주로 할인과 무료 배송 혜택을 강조하고 있으니, 차별화된 가치 제안이 필요합니다.`;
+  // 상태 확인 요청
+  if (message.includes('상태') || message.includes('상황') || message.includes('설정')) {
+    return {
+      response: `'${keyword}' 키워드의 현재 상태는 '활성화'입니다. 상태를 변경하시려면 "키워드를 일시중지해줘"와 같이 요청하세요.`,
+      actions: []
+    };
   }
   
-  if (message.includes('설정') || message.includes('설정값')) {
-    return `'${keyword}' 키워드의 현재 설정값은 다음과 같습니다:
-- 매칭 타입: 정확히 일치
-- 입찰가: 1,000원
-- 상태: 활성화됨
-- 품질 점수: 7/10
-- 광고 그룹: ${keywordInfo.adGroupName}
-- 캠페인: ${keywordInfo.campaignName}`;
-  }
-  
-  return `'${keyword}' 키워드에 대해 어떤 정보가 필요하신가요? 성과 분석, 최적화 전략, 유사 키워드 추천, 경쟁사 분석, 설정값 정보 등에 대해 도움을 드릴 수 있습니다.`;
+  return {
+    response: `'${keyword}' 키워드의 설정을 변경하시려면 다음과 같이 요청해 주세요:
+- "키워드를 활성화해줘"
+- "키워드를 일시중지해줘" 
+- "키워드를 삭제해줘"`,
+    actions: []
+  };
 } 

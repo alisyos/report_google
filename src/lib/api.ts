@@ -378,4 +378,31 @@ export async function updateCampaignStatus(campaignId: string, newStatus: string
       error: error.response?.data?.message || '캠페인 상태를 업데이트하는 중 오류가 발생했습니다.'
     };
   }
+}
+
+// 키워드 상태 업데이트 함수
+export async function updateKeywordStatus(keywordId: string, adGroupId: string, status: string): Promise<ApiResponse<any>> {
+  try {
+    console.log(`키워드 상태 업데이트 API 요청 - keywordId: ${keywordId}, adGroupId: ${adGroupId}, status: ${status}`);
+    
+    const response = await axios.put(`${API_URL}/api/keywords/status`, {
+      keywordId,
+      adGroupId,
+      status
+    });
+    
+    console.log('키워드 상태 업데이트 API 응답:', response.data);
+    
+    return { 
+      success: response.data.success,
+      message: response.data.message,
+      data: response.data
+    };
+  } catch (error: any) {
+    console.error('키워드 상태 업데이트 오류:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || '키워드 상태를 업데이트하는 중 오류가 발생했습니다.',
+    };
+  }
 } 
