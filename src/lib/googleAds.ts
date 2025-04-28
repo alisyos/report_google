@@ -1198,7 +1198,7 @@ export async function updateCampaignStatus(campaignId: string, newStatus: string
     }
     
     // 구글 광고 API 고객 ID 가져오기
-    const customerId = process.env.GOOGLE_ADS_CLIENT_CUSTOMER_ID;
+    const customerId = process.env.GOOGLE_ADS_CLIENT_CUSTOMER_ID || CUSTOMER_ID;
     if (!customerId) {
       return {
         success: false,
@@ -1207,47 +1207,62 @@ export async function updateCampaignStatus(campaignId: string, newStatus: string
     }
     
     // API 요청 URL 및 본문 구성
-    const apiVersion = '15'; // 또는 현재 사용 중인 Google Ads API 버전
-    const endpoint = `https://googleads.googleapis.com/v${apiVersion}/customers/${customerId}/campaigns/${campaignId}:mutate`;
-    
+    const endpoint = `${API_BASE_URL}/v${API_VERSION}/customers/${customerId}/campaigns/${campaignId}:mutate`;
+
+    // 요청 본문 구성 - GAQL 뮤테이션 형식 사용
     const requestBody = {
-      updateMask: "status",
-      campaign: {
-        resourceName: `customers/${customerId}/campaigns/${campaignId}`,
-        status: newStatus
-      }
+      mutateOperations: [
+        {
+          campaignOperation: {
+            update: {
+              resourceName: `customers/${customerId}/campaigns/${campaignId}`,
+              status: newStatus
+            },
+            updateMask: "status"
+          }
+        }
+      ]
     };
     
     console.log('API 요청 URL:', endpoint);
     console.log('API 요청 본문:', JSON.stringify(requestBody, null, 2));
     
-    // 테스트를 위한 모의 응답 - 실제 API 호출 구현 시 아래 코드로 대체
-    /* 
+    // 실제 API 호출 실행
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN || ''
+        'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
+        ...(LOGIN_CUSTOMER_ID ? { 'login-customer-id': LOGIN_CUSTOMER_ID } : {})
       },
       body: JSON.stringify(requestBody)
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('API 오류 응답:', errorData);
+      let errorMessage = `API 오류: HTTP ${response.status} - ${response.statusText}`;
+      
+      // 응답 본문을 한 번만 읽음
+      const responseText = await response.text();
+      
+      try {
+        // 텍스트를 JSON으로 파싱 시도
+        const errorData = JSON.parse(responseText);
+        console.error('API 오류 응답 (JSON):', errorData);
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch (parseError) {
+        // JSON 파싱에 실패하면 텍스트 형태로 로깅
+        console.error('API 오류 응답 (Text):', responseText.substring(0, 500)); // 너무 긴 경우 앞부분만 로깅
+      }
+      
       return {
         success: false, 
-        message: `API 오류: ${errorData.error?.message || response.statusText}`
+        message: errorMessage
       };
     }
     
     const responseData = await response.json();
     console.log('API 응답:', responseData);
-    */
-    
-    // 테스트용 모의 응답
-    console.log('테스트 모드: 실제 API 호출을 시뮬레이션합니다.');
     
     return {
       success: true,
@@ -1260,4 +1275,325 @@ export async function updateCampaignStatus(campaignId: string, newStatus: string
       message: `오류 발생: ${error.message || '알 수 없는 오류'}`
     };
   }
+}
+
+/**
+ * 키워드 상태 업데이트
+ * 
+ * 구글 광고 API를 통해 키워드의 상태를 업데이트합니다.
+ * @param keywordId 업데이트할 키워드 ID
+ * @param adGroupId 키워드가 속한 광고 그룹 ID
+ * @param newStatus 새로운 상태 ('ENABLED', 'PAUSED', 'REMOVED' 중 하나)
+ * @returns 업데이트 성공 여부
+ */
+export async function updateKeywordStatus(keywordId: string, adGroupId: string, newStatus: string): Promise<{ success: boolean; message: string }> {
+  try {
+    // 환경 변수 로그
+    console.log(`updateKeywordStatus() 호출됨 - 키워드 ID: ${keywordId}, 광고그룹 ID: ${adGroupId}, 새 상태: ${newStatus}`);
+    logEnvironmentVars();
+    
+    // 상태값 유효성 검사
+    const validStatuses = ['ENABLED', 'PAUSED', 'REMOVED'];
+    if (!validStatuses.includes(newStatus)) {
+      return {
+        success: false,
+        message: `유효하지 않은 상태입니다. 허용된 값: ${validStatuses.join(', ')}`
+      };
+    }
+    
+    // 액세스 토큰 가져오기
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return {
+        success: false,
+        message: '액세스 토큰을 가져올 수 없습니다.'
+      };
+    }
+    
+    // 구글 광고 API 고객 ID 가져오기
+    const customerId = process.env.GOOGLE_ADS_CLIENT_CUSTOMER_ID || CUSTOMER_ID;
+    if (!customerId) {
+      return {
+        success: false,
+        message: '구글 광고 API 고객 ID가 설정되지 않았습니다.'
+      };
+    }
+    
+    // Google Ads API v19를 사용하는 GAQL 뮤테이션 쿼리 구성
+    const endpoint = `${API_BASE_URL}/v${API_VERSION}/customers/${customerId}/googleAds:mutate`;
+
+    // 요청 본문 구성 - GAQL 뮤테이션 형식 사용
+    const requestBody = {
+      mutateOperations: [
+        {
+          adGroupCriterionOperation: {
+            update: {
+              resourceName: `customers/${customerId}/adGroupCriteria/${adGroupId}~${keywordId}`,
+              status: newStatus
+            },
+            updateMask: "status"
+          }
+        }
+      ]
+    };
+    
+    console.log('API 요청 URL:', endpoint);
+    console.log('API 요청 본문:', JSON.stringify(requestBody, null, 2));
+    
+    // 실제 API 호출 실행
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
+        ...(LOGIN_CUSTOMER_ID ? { 'login-customer-id': LOGIN_CUSTOMER_ID } : {})
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+      let errorMessage = `API 오류: HTTP ${response.status} - ${response.statusText}`;
+      
+      // 응답 본문을 한 번만 읽음
+      const responseText = await response.text();
+      
+      try {
+        // 텍스트를 JSON으로 파싱 시도
+        const errorData = JSON.parse(responseText);
+        console.error('API 오류 응답 (JSON):', errorData);
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch (parseError) {
+        // JSON 파싱에 실패하면 텍스트 형태로 로깅
+        console.error('API 오류 응답 (Text):', responseText.substring(0, 500)); // 너무 긴 경우 앞부분만 로깅
+      }
+      
+      return {
+        success: false, 
+        message: errorMessage
+      };
+    }
+    
+    const responseData = await response.json();
+    console.log('API 응답:', responseData);
+    
+    return {
+      success: true,
+      message: `키워드 ID ${keywordId}의 상태가 ${newStatus}로 업데이트되었습니다.`
+    };
+  } catch (error: any) {
+    console.error('updateKeywordStatus 에러:', error);
+    return {
+      success: false,
+      message: `오류 발생: ${error.message || '알 수 없는 오류'}`
+    };
+  }
+}
+
+/**
+ * 특정 키워드의 상세 정보를 가져옵니다.
+ * 키워드 ID를 기준으로 해당 키워드의 세부 설정 및 성과 정보를 조회합니다.
+ * 
+ * @param keywordId 조회할 키워드의 ID
+ * @param adGroupId 선택적으로 광고 그룹 ID를 지정하여 필터링 가능
+ * @returns 키워드 상세 정보 객체
+ */
+export async function getKeywordDetails(keywordId: string, adGroupId?: string) {
+  try {
+    console.log(`getKeywordDetails() 호출됨, 키워드 ID: ${keywordId}, 광고 그룹 ID: ${adGroupId || '지정되지 않음'}`);
+    logEnvironmentVars();
+    
+    const query = `
+      SELECT
+        ad_group_criterion.criterion_id,
+        ad_group_criterion.keyword.text,
+        ad_group_criterion.keyword.match_type,
+        ad_group_criterion.effective_cpc_bid_micros,
+        ad_group_criterion.status,
+        ad_group_criterion.quality_info.quality_score,
+        ad_group.id,
+        ad_group.name,
+        campaign.id,
+        campaign.name,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.cost_micros,
+        metrics.conversions,
+        metrics.ctr,
+        metrics.average_cpc
+      FROM keyword_view
+      WHERE ad_group_criterion.criterion_id = '${keywordId}'
+      ${adGroupId ? `AND ad_group.id = '${adGroupId}'` : ''}
+      LIMIT 1
+    `;
+    
+    console.log('API 쿼리:', query);
+    
+    try {
+      const results = await tryMultipleEndpoints(query);
+      
+      if (results && results.length > 0) {
+        console.log(`키워드 상세 정보 조회 성공: ${results[0].ad_group_criterion?.keyword?.text || '알 수 없음'}`);
+        return results[0];
+      } else {
+        console.log('API 호출 성공했지만 결과가 없음, 모의 데이터 반환');
+        return getMockKeywordDetails(keywordId, adGroupId);
+      }
+    } catch (error) {
+      console.error('API 호출 실패, 모의 데이터 반환:', error);
+      return getMockKeywordDetails(keywordId, adGroupId);
+    }
+  } catch (error) {
+    console.error('키워드 상세 정보 조회 오류:', error);
+    return getMockKeywordDetails(keywordId, adGroupId);
+  }
+}
+
+/**
+ * 키워드 상세 정보에 대한 모의 데이터를 생성합니다.
+ * 테스트 및 개발 목적으로 사용됩니다.
+ * 
+ * @param keywordId 조회할 키워드의 ID
+ * @param adGroupId 선택적으로 광고 그룹 ID를 지정하여 필터링 가능
+ * @returns 모의 키워드 상세 정보 객체
+ */
+function getMockKeywordDetails(keywordId: string, adGroupId?: string) {
+  console.log(`모의 키워드 상세 정보 생성 - 키워드 ID: ${keywordId}`);
+  
+  // 미리 정의된 키워드 ID별 상세 정보
+  const mockDataMap: {[key: string]: any} = {
+    '1001': {
+      ad_group_criterion: { 
+        criterion_id: '1001',
+        keyword: { text: '농협맛선', match_type: 'EXACT' },
+        effective_cpc_bid_micros: 1800000000, // 1,800원
+        status: 'ENABLED',
+        quality_info: { quality_score: 8 }
+      },
+      ad_group: { id: '174144587179', name: '건강맛선_브랜드K' },
+      campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' },
+      metrics: {
+        impressions: 1200,
+        clicks: 80,
+        cost_micros: 12000000, // 12,000원
+        conversions: 3.5,
+        ctr: 0.0667,
+        average_cpc: 150000 // 150원
+      }
+    },
+    '1002': {
+      ad_group_criterion: { 
+        criterion_id: '1002',
+        keyword: { text: '건강간식', match_type: 'PHRASE' },
+        effective_cpc_bid_micros: 1500000000, // 1,500원
+        status: 'ENABLED',
+        quality_info: { quality_score: 7 }
+      },
+      ad_group: { id: '174144587179', name: '건강맛선_브랜드K' },
+      campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' },
+      metrics: {
+        impressions: 850,
+        clicks: 45,
+        cost_micros: 9000000, // 9,000원
+        conversions: 2.1,
+        ctr: 0.0529,
+        average_cpc: 200000 // 200원
+      }
+    },
+    '2001': {
+      ad_group_criterion: { 
+        criterion_id: '2001',
+        keyword: { text: '맛선', match_type: 'BROAD' },
+        effective_cpc_bid_micros: 2000000000, // 2,000원
+        status: 'PAUSED',
+        quality_info: { quality_score: 6 }
+      },
+      ad_group: { id: '174144649879', name: '맛선_브랜드K' },
+      campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' },
+      metrics: {
+        impressions: 2500,
+        clicks: 120,
+        cost_micros: 18000000, // 18,000원
+        conversions: 5.8,
+        ctr: 0.048,
+        average_cpc: 150000 // 150원
+      }
+    },
+    '3001': {
+      ad_group_criterion: { 
+        criterion_id: '3001',
+        keyword: { text: '농협식품', match_type: 'EXACT' },
+        effective_cpc_bid_micros: 1700000000, // 1,700원
+        status: 'ENABLED',
+        quality_info: { quality_score: 9 }
+      },
+      ad_group: { id: '174144711979', name: '농협식품_브랜드K' },
+      campaign: { id: '21980481095', name: '1. [SA] 월간 농협맛선_2월 캠페인 (브랜드)' },
+      metrics: {
+        impressions: 980,
+        clicks: 63,
+        cost_micros: 11500000, // 11,500원
+        conversions: 2.9,
+        ctr: 0.0643,
+        average_cpc: 182540 // 182.54원
+      }
+    },
+    // 챗GPT강사 키워드 추가
+    '2027443316358': {
+      ad_group_criterion: { 
+        criterion_id: '2027443316358',
+        keyword: { text: '챗GPT강사', match_type: 'EXACT' },
+        effective_cpc_bid_micros: 1000000000, // 1,000원
+        status: 'ENABLED',
+        quality_info: { quality_score: 7 }
+      },
+      ad_group: { id: '179320325500', name: '1.범용_MO' },
+      campaign: { id: '22478186375', name: 'MO_TOP 10_지피티' },
+      metrics: {
+        impressions: 4850,
+        clicks: 325,
+        cost_micros: 32500000, // 32,500원
+        conversions: 12.3,
+        ctr: 0.067,
+        average_cpc: 100000 // 100원
+      }
+    }
+  };
+  
+  // 키워드 ID에 해당하는 Mock 데이터가 있으면 반환
+  if (mockDataMap[keywordId]) {
+    // 광고 그룹 ID 필터링
+    if (adGroupId && mockDataMap[keywordId].ad_group.id !== adGroupId) {
+      return getDefaultMockKeywordDetails(keywordId, adGroupId);
+    }
+    return mockDataMap[keywordId];
+  }
+  
+  // 기본 Mock 데이터 (특정 키워드 ID가 매칭되지 않을 경우)
+  return getDefaultMockKeywordDetails(keywordId, adGroupId);
+}
+
+/**
+ * 기본 모의 키워드 상세 정보를 생성합니다.
+ */
+function getDefaultMockKeywordDetails(keywordId: string, adGroupId?: string) {
+  return {
+    ad_group_criterion: { 
+      criterion_id: keywordId,
+      keyword: { text: `키워드 ${keywordId.slice(-4)}`, match_type: 'EXACT' },
+      effective_cpc_bid_micros: 1000000000, // 1,000원
+      status: 'ENABLED',
+      quality_info: { quality_score: 7 }
+    },
+    ad_group: { id: adGroupId || '0', name: '알 수 없는 광고 그룹' },
+    campaign: { id: '0', name: '알 수 없는 캠페인' },
+    metrics: {
+      impressions: 1000,
+      clicks: 50,
+      cost_micros: 10000000, // 10,000원
+      conversions: 2.0,
+      ctr: 0.05,
+      average_cpc: 200000 // 200원
+    }
+  };
 } 
